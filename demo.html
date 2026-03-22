@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Rain — Demo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #00ff41;
+            font-family: 'Share Tech Mono', monospace;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* The rain container — fill the viewport */
+        #rain {
+            position: fixed;
+            inset: 0;
+        }
+
+        /* Text content sits inside the container — rain canvas covers it */
+        .content {
+            position: relative;
+            z-index: 1;          /* below canvas (z-index: 9999) */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 2rem;
+            pointer-events: none;
+        }
+
+        h1 {
+            font-size: 2rem;
+            letter-spacing: 0.3em;
+            text-shadow: 0 0 20px #00ff41;
+        }
+
+        p {
+            opacity: 0.5;
+            font-size: 0.85rem;
+            letter-spacing: 0.15em;
+        }
+
+        /* Controls */
+        #controls {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 0.75rem;
+            z-index: 10000;
+        }
+
+        button {
+            background: rgba(0,255,65,0.08);
+            color: #00ff41;
+            border: 1px solid rgba(0,255,65,0.35);
+            padding: 0.5rem 1.2rem;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.85rem;
+            cursor: pointer;
+            letter-spacing: 0.1em;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        button:hover {
+            background: rgba(0,255,65,0.2);
+            border-color: #00ff41;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="rain">
+        <div class="content">
+            <h1>DIGITAL RAIN</h1>
+            <p>The canvas renders above this text.</p>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button onclick="rain.start()">▶ Start</button>
+        <button onclick="rain.stop()">■ Stop</button>
+        <button onclick="rain.triggerBurst()">⚡ Burst</button>
+    </div>
+
+    <script src="digital-rain.js"></script>
+    <script>
+        const rain = new DigitalRain('#rain', {
+            startDelay:       0,    // start immediately
+            burst:            true,
+            burstDurationMin: 3,
+            burstDurationMax: 6,
+            burstIntervalMin: 10,   // short for demo — use 120+ in production
+            burstIntervalMax: 20,
+        });
+
+        rain.start();
+    </script>
+</body>
+</html>
