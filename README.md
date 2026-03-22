@@ -8,6 +8,9 @@ No dependencies. Single file.
 ## Setup
 
 ```html
+<!-- Optional -->
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
 <script src="digital-rain.js"></script>
 
 <div id="rain" style="position:fixed;inset:0;"></div>
