@@ -11,97 +11,303 @@
         body {
             background: #000;
             color: #00ff41;
-            font-family: 'Share Tech Mono', monospace;
+            font-family: "Courier New", monospace;
             height: 100vh;
             overflow: hidden;
         }
 
-        /* The rain container — fill the viewport */
-        #rain {
-            position: fixed;
-            inset: 0;
-        }
+        #rain { position: fixed; inset: 0; }
 
-        /* Text content sits inside the container — rain canvas covers it */
-        .content {
-            position: relative;
-            z-index: 1;          /* below canvas (z-index: 9999) */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            gap: 2rem;
-            pointer-events: none;
-        }
-
-        h1 {
-            font-size: 2rem;
-            letter-spacing: 0.3em;
-            text-shadow: 0 0 20px #00ff41;
-        }
-
-        p {
-            opacity: 0.5;
-            font-size: 0.85rem;
-            letter-spacing: 0.15em;
-        }
-
-        /* Controls */
         #controls {
             position: fixed;
-            bottom: 2rem;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 0.75rem;
+            bottom: 0;
+            left: 0;
+            right: 0;
             z-index: 10000;
+            background: rgba(0,0,0,0.88);
+            border-top: 1px solid rgba(0,255,65,0.2);
+            padding: 0.6rem 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.6rem 1.2rem;
         }
 
-        button {
-            background: rgba(0,255,65,0.08);
-            color: #00ff41;
-            border: 1px solid rgba(0,255,65,0.35);
-            padding: 0.5rem 1.2rem;
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.85rem;
+        .ctrl-group {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .ctrl-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        label, .lbl {
+            font-size: 0.65rem;
+            letter-spacing: 0.08em;
+            color: rgba(0,255,65,0.55);
+            white-space: nowrap;
+        }
+
+        .sep {
+            width: 1px;
+            height: 28px;
+            background: rgba(0,255,65,0.15);
+            flex-shrink: 0;
+        }
+
+        /* Arrow + slider row */
+        .sl-row {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .arr {
+            background: none;
+            border: none;
+            color: rgba(0,255,65,0.5);
+            font-size: 0.75rem;
             cursor: pointer;
-            letter-spacing: 0.1em;
-            transition: background 0.15s, border-color 0.15s;
+            padding: 0 0.15rem;
+            line-height: 1;
+            transition: color 0.1s;
         }
-        button:hover {
-            background: rgba(0,255,65,0.2);
-            border-color: #00ff41;
+        .arr:hover { color: #00ff41; }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 80px;
+            height: 2px;
+            background: rgba(0,255,65,0.22);
+            outline: none;
+            cursor: pointer;
         }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: pointer;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #00ff41;
+            border: none;
+            cursor: pointer;
+        }
+
+        .val {
+            font-size: 0.65rem;
+            color: #00ff41;
+            min-width: 3ch;
+            text-align: right;
+        }
+
+        .tier-label {
+            font-size: 0.6rem;
+            color: rgba(0,255,65,0.4);
+            width: 4rem;
+        }
+
+        button.action {
+            background: rgba(0,255,65,0.07);
+            color: #00ff41;
+            border: 1px solid rgba(0,255,65,0.28);
+            padding: 0.3rem 0.8rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.72rem;
+            cursor: pointer;
+            letter-spacing: 0.06em;
+            transition: background 0.12s;
+            white-space: nowrap;
+        }
+        button.action:hover { background: rgba(0,255,65,0.18); border-color: #00ff41; }
     </style>
 </head>
 <body>
 
-    <div id="rain">
-        <div class="content">
-            <h1>DIGITAL RAIN</h1>
-            <p>The canvas renders above this text.</p>
+<div id="rain"></div>
+
+<div id="controls">
+
+    <!-- Playback -->
+    <div class="ctrl-group">
+        <button class="action" onclick="rain.start()">▶ Start</button>
+        <button class="action" onclick="rain.stop()">■ Stop</button>
+        <button class="action" onclick="rain.triggerBurst()">⚡ Burst</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Drop speed -->
+    <div class="ctrl-group">
+        <label>SPEED</label>
+        <div class="sl-row">
+            <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
+            <input type="range" id="rSpeed" min="0" max="100" value="95"
+                   oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
+            <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
+        </div>
+        <span class="val" id="vSpeed">95</span>
+    </div>
+
+    <!-- Dual frequency -->
+    <div class="ctrl-group">
+        <label>DUAL FREQ</label>
+        <div class="sl-row">
+            <button class="arr" onclick="step('rDual',-1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">◀</button>
+            <input type="range" id="rDual" min="0" max="100" value="50"
+                   oninput="setVal('vDual',this.value); rain.configure({dualFrequency:+this.value})">
+            <button class="arr" onclick="step('rDual',+1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">▶</button>
+        </div>
+        <span class="val" id="vDual">50</span>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Speed tiers -->
+    <div class="ctrl-col">
+        <label>TIER WEIGHTS</label>
+        <div class="sl-row">
+            <span class="tier-label">fast (2)</span>
+            <button class="arr" onclick="step('rT0',-1,'vT0',0,100,updateTiers)">◀</button>
+            <input type="range" id="rT0" min="0" max="100" value="50" oninput="setVal('vT0',this.value); updateTiers()">
+            <button class="arr" onclick="step('rT0',+1,'vT0',0,100,updateTiers)">▶</button>
+            <span class="val" id="vT0">50</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">med (4)</span>
+            <button class="arr" onclick="step('rT1',-1,'vT1',0,100,updateTiers)">◀</button>
+            <input type="range" id="rT1" min="0" max="100" value="42" oninput="setVal('vT1',this.value); updateTiers()">
+            <button class="arr" onclick="step('rT1',+1,'vT1',0,100,updateTiers)">▶</button>
+            <span class="val" id="vT1">42</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">slow (10)</span>
+            <button class="arr" onclick="step('rT2',-1,'vT2',0,100,updateTiers)">◀</button>
+            <input type="range" id="rT2" min="0" max="100" value="4" oninput="setVal('vT2',this.value); updateTiers()">
+            <button class="arr" onclick="step('rT2',+1,'vT2',0,100,updateTiers)">▶</button>
+            <span class="val" id="vT2">4</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">v.slow (13)</span>
+            <button class="arr" onclick="step('rT3',-1,'vT3',0,100,updateTiers)">◀</button>
+            <input type="range" id="rT3" min="0" max="100" value="4" oninput="setVal('vT3',this.value); updateTiers()">
+            <button class="arr" onclick="step('rT3',+1,'vT3',0,100,updateTiers)">▶</button>
+            <span class="val" id="vT3">4</span>
         </div>
     </div>
 
-    <div id="controls">
-        <button onclick="rain.start()">▶ Start</button>
-        <button onclick="rain.stop()">■ Stop</button>
-        <button onclick="rain.triggerBurst()">⚡ Burst</button>
+    <div class="sep"></div>
+
+    <!-- Trail lengths -->
+    <div class="ctrl-col">
+        <label>TRAIL LENGTH</label>
+        <div class="sl-row">
+            <span class="tier-label">fast</span>
+            <button class="arr" onclick="step('rTF',-1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">◀</button>
+            <input type="range" id="rTF" min="5" max="100" value="28"
+                   oninput="setVal('vTF',this.value); rain.configure({trailLengthFast:+this.value})">
+            <button class="arr" onclick="step('rTF',+1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">▶</button>
+            <span class="val" id="vTF">28</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">slow</span>
+            <button class="arr" onclick="step('rTS',-1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">◀</button>
+            <input type="range" id="rTS" min="5" max="150" value="70"
+                   oninput="setVal('vTS',this.value); rain.configure({trailLengthSlow:+this.value})">
+            <button class="arr" onclick="step('rTS',+1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">▶</button>
+            <span class="val" id="vTS">70</span>
+        </div>
     </div>
 
-    <script src="digital-rain.js"></script>
-    <script>
-        const rain = new DigitalRain('#rain', {
-            startDelay:       0,    // start immediately
-            burst:            true,
-            burstDurationMin: 3,
-            burstDurationMax: 6,
-            burstIntervalMin: 10,   // short for demo — use 120+ in production
-            burstIntervalMax: 20,
-        });
+    <div class="sep"></div>
 
-        rain.start();
-    </script>
+    <!-- Burst -->
+    <div class="ctrl-col">
+        <label>BURST</label>
+        <div class="sl-row">
+            <span class="tier-label">dur min</span>
+            <button class="arr" onclick="step('rBDMin',-1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">◀</button>
+            <input type="range" id="rBDMin" min="1" max="20" value="3"
+                   oninput="setVal('vBDMin',this.value); rain.configure({burstDurationMin:+this.value})">
+            <button class="arr" onclick="step('rBDMin',+1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">▶</button>
+            <span class="val" id="vBDMin">3</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">dur max</span>
+            <button class="arr" onclick="step('rBDMax',-1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">◀</button>
+            <input type="range" id="rBDMax" min="1" max="30" value="7"
+                   oninput="setVal('vBDMax',this.value); rain.configure({burstDurationMax:+this.value})">
+            <button class="arr" onclick="step('rBDMax',+1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">▶</button>
+            <span class="val" id="vBDMax">7</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">int min</span>
+            <button class="arr" onclick="step('rBIMin',-1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">◀</button>
+            <input type="range" id="rBIMin" min="1" max="300" value="30"
+                   oninput="setVal('vBIMin',this.value); rain.configure({burstIntervalMin:+this.value})">
+            <button class="arr" onclick="step('rBIMin',+1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">▶</button>
+            <span class="val" id="vBIMin">30</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">int max</span>
+            <button class="arr" onclick="step('rBIMax',-1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">◀</button>
+            <input type="range" id="rBIMax" min="1" max="600" value="60"
+                   oninput="setVal('vBIMax',this.value); rain.configure({burstIntervalMax:+this.value})">
+            <button class="arr" onclick="step('rBIMax',+1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">▶</button>
+            <span class="val" id="vBIMax">60</span>
+        </div>
+    </div>
+
+</div>
+
+<script src="digital-rain.js"></script>
+<script>
+    const rain = new DigitalRain('#rain', {
+        dropSpeed:       95,
+        speedTiers: [
+            { frameSkip: 2,  weight: 50 },
+            { frameSkip: 4,  weight: 42 },
+            { frameSkip: 10, weight: 4  },
+            { frameSkip: 13, weight: 4  },
+        ],
+        dualFrequency:   50,
+        dualMinGap:      10,
+        trailLengthFast: 28,
+        trailLengthSlow: 70,
+        burst:           true,
+        burstDurationMin:3,
+        burstDurationMax:7,
+        burstIntervalMin:30,
+        burstIntervalMax:60,
+    });
+
+    rain.start();
+
+    function setVal(id, v) { document.getElementById(id).textContent = v; }
+
+    function step(sliderId, delta, valId, min, max, callback) {
+        const el  = document.getElementById(sliderId);
+        const val = Math.min(max, Math.max(min, +el.value + delta));
+        el.value  = val;
+        setVal(valId, val);
+        callback(val);
+    }
+
+    function updateTiers() {
+        rain.configure({ speedTiers: [
+            { frameSkip: 2,  weight: +document.getElementById('rT0').value },
+            { frameSkip: 4,  weight: +document.getElementById('rT1').value },
+            { frameSkip: 10, weight: +document.getElementById('rT2').value },
+            { frameSkip: 13, weight: +document.getElementById('rT3').value },
+        ]});
+    }
+</script>
 </body>
 </html>

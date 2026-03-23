@@ -71,7 +71,17 @@ class DigitalRain {
         this._burstRadius = 3;
     }
 
-    configure(o) { Object.assign(this._cfg, o); }
+    configure(o) {
+        Object.assign(this._cfg, o);
+        if (this._canvas) {
+            // Clear canvas so old state doesn't linger during reinit
+            const ctx = this._ctx;
+            ctx.fillStyle = this._cfg.bgColor;
+            ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
+            this._computeCached();
+            this._initColumns();
+        }
+    }
 
     static get DEFAULTS() {
         return {
@@ -87,10 +97,10 @@ class DigitalRain {
 
             // Speed tiers: frameSkip (lower=faster), weight (relative probability)
             speedTiers: [
-                { frameSkip: 2,  weight: 70 },   // fast
-                { frameSkip: 4,  weight: 30 },   // medium
-                { frameSkip: 10, weight: 0 },   // slow
-                { frameSkip: 13, weight: 0 },   // super slow
+                { frameSkip: 2,  weight: 50 },
+                { frameSkip: 4,  weight: 42 },
+                { frameSkip: 10, weight: 4  },
+                { frameSkip: 13, weight: 4  },
             ],
 
             // 0=never dual streams, 100=very frequent
