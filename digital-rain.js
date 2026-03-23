@@ -318,14 +318,12 @@ class DigitalRain {
             }
 
             // ── STEP 2: Render all streams for this column ─────────────────
-            // Build rowMap: row → { char, brightness, steps, isHead }
-            // Head = last entry in each active stream's trail array
             const rowMap = new Map();
             for (const st of col.streams) {
                 const headIdx = st.active ? st.trails.length - 1 : -1;
                 for (let t = 0; t < st.trails.length; t++) {
-                    const e       = st.trails[t];
-                    const isHead  = (t === headIdx);
+                    const e        = st.trails[t];
+                    const isHead   = (t === headIdx);
                     const existing = rowMap.get(e.row);
                     if (!existing || e.brightness > existing.brightness) {
                         rowMap.set(e.row, { char: e.char, brightness: e.brightness, steps: st.steps, isHead });
@@ -333,15 +331,15 @@ class DigitalRain {
                 }
             }
 
-            // Draw every cell that has an entry; clear cells that don't
-            // We track which rows are occupied to clear vacated rows
             for (const [row, entry] of rowMap) {
                 const cy = row * fw;
                 ctx.fillStyle = cfg.bgColor;
                 ctx.fillRect(x, cy, fw, fw);
 
                 if (entry.isHead) {
-                    // Draw head with glow
+                    // Clear extra pixel around cell to catch halo bleed
+                    ctx.fillStyle = cfg.bgColor;
+                    ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                     ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
                     ctx.font = `${fw}px ${cfg.fontFamily}`;
                     for (const [ox, oy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
@@ -350,7 +348,6 @@ class DigitalRain {
                     ctx.fillStyle = `rgb(${rb},255,${rb})`;
                     ctx.fillText(entry.char, x, cy + fw - 2);
                 } else {
-                    // Draw trail char
                     const ratio  = Math.min(entry.brightness, entry.steps) / entry.steps;
                     const base_g = Math.floor(Math.pow(ratio, 1.8) * 255);
                     const g      = Math.min(255, base_g + bIntens * 220);
@@ -361,8 +358,6 @@ class DigitalRain {
                 }
             }
 
-            // Clear rows that had entries last frame but don't this frame
-            // Track previous rowMap on the column object
             if (col.prevRows) {
                 for (const row of col.prevRows) {
                     if (!rowMap.has(row)) {
