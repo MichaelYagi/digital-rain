@@ -103,7 +103,7 @@ class DigitalRain {
             chars:           'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
 
             // 0=frozen, 1=barely moving, 50=default, 100=fastest
-            dropSpeed:       95,
+            dropSpeed:       99,
 
             // Speed tiers: frameSkip (lower=faster), weight (relative probability)
             speedTiers: [
