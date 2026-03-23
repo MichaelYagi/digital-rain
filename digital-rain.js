@@ -139,6 +139,11 @@ class DigitalRain {
         this._sigDenom   = 2 * cfg.burstEpicenterSigma * cfg.burstEpicenterSigma;
         this._fontStr    = `${cfg.fontSize}px ${cfg.fontFamily}`;
         this._ringFronts = new Float32Array(cfg.burstNumRings);
+
+        // Pre-build green color LUT: index 0–255 → 'rgb(0,g,0)' string
+        // Avoids template string allocation for every trail entry every frame
+        this._greenLUT = new Array(256);
+        for (let g = 0; g < 256; g++) this._greenLUT[g] = `rgb(0,${g},0)`;
     }
 
     _makeFrameSkip() {
@@ -301,6 +306,8 @@ class DigitalRain {
         }
 
         ctx.font = this._fontStr; // set once per frame
+        const greenLUT = this._greenLUT;
+        const glowLUT  = `rgba(0,255,0,${cfg.glowAlpha})`; // cached no-burst glow
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
@@ -390,70 +397,80 @@ class DigitalRain {
                 if (!col.streams[s].active && col.streams[s].trails.length === 0) col.streams.splice(s, 1);
             }
             if (col.streams.length === 0) col.streams.push(this._makeStream(Math.random() * 60 | 0));
+        }
 
-            // ── STEP 2: Build rowMap (swap A/B, clear previous) ────────────
-            const rowMap   = col.useA ? col.mapA : col.mapB;
-            const prevRows = col.useA ? col.mapB : col.mapA;
-            col.useA = !col.useA;
+        // ── STEP 2: Clear entire canvas, then redraw all trails ────────────
+        // Single fillRect is faster than hundreds of per-cell clears + object churn
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
 
-            // Clear rowMap (was prevRows last frame — already iterated, safe to wipe)
-            for (const k in rowMap) delete rowMap[k];
+        for (let i = 0; i < numCols; i++) {
+            const col = this._cols[i];
+            const x   = i * fw;
+
+            // Recompute bIntens for render pass
+            let bIntens = 0;
+            if (burstActive && burstEpicenter >= 0) {
+                const rf   = this._ringFronts;
+                const dist = i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i;
+                for (let r = 0; r < numRings; r++) {
+                    const rr = rf[r];
+                    if (rr < 0) continue;
+                    const passed = rr - dist;
+                    if (passed >= 0 && passed < bellWidth3) {
+                        const bell = Math.exp(-(passed * passed) / bellDenom);
+                        const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
+                        if (bell * str > bIntens) bIntens = bell * str;
+                    }
+                }
+                const cb = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
+                bIntens += cb;
+                if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
+                if (bIntens > 1) bIntens = 1;
+            }
+
+            const rb        = bIntens * 230 | 0;
+            const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
             for (let s = 0; s < col.streams.length; s++) {
                 const st      = col.streams[s];
                 const trails  = st.trails;
                 const headIdx = st.active ? trails.length - 1 : -1;
+
                 for (let t = 0; t < trails.length; t++) {
-                    const e        = trails[t];
-                    const existing = rowMap[e.row];
-                    if (!existing || e.brightness > existing.brightness) {
-                        if (existing) {
-                            existing.char = e.char; existing.brightness = e.brightness;
-                            existing.steps = st.steps; existing.isHead = (t === headIdx);
+                    const e  = trails[t];
+                    const cy = e.row * fw;
+
+                    if (t === headIdx) {
+                        if (bIntens > 0) {
+                            ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
+                            ctx.fillText(e.char, x - 1, cy + fw - 2);
+                            ctx.fillText(e.char, x + 1, cy + fw - 2);
+                            ctx.fillText(e.char, x,     cy + fw - 3);
+                            ctx.fillText(e.char, x,     cy + fw - 1);
+                            ctx.fillStyle = `rgb(${rb},255,${rb})`;
                         } else {
-                            rowMap[e.row] = { char: e.char, brightness: e.brightness,
-                                              steps: st.steps, isHead: (t === headIdx) };
+                            ctx.fillStyle = glowLUT;
+                            ctx.fillText(e.char, x - 1, cy + fw - 2);
+                            ctx.fillText(e.char, x + 1, cy + fw - 2);
+                            ctx.fillText(e.char, x,     cy + fw - 3);
+                            ctx.fillText(e.char, x,     cy + fw - 1);
+                            ctx.fillStyle = '#00ff41';
                         }
+                        ctx.fillText(e.char, x, cy + fw - 2);
+                    } else {
+                        const cl1    = e.brightness / st.steps;
+                        const cl     = cl1 > 1 ? 1 : cl1;
+                        if (bIntens > 0) {
+                            const base_g = cl * cl * 255 | 0;
+                            const g      = base_g + (bIntens * 220 | 0);
+                            const trb    = bIntens * cl * 230 | 0;
+                            ctx.fillStyle = `rgb(${trb},${g > 255 ? 255 : g},${trb})`;
+                        } else {
+                            ctx.fillStyle = greenLUT[cl * cl * 255 | 0];
+                        }
+                        ctx.fillText(e.char, x, cy + fw - 2);
                     }
-                }
-            }
-
-            // ── Render ─────────────────────────────────────────────────────
-            ctx.fillStyle = bgColor;
-
-            // Clear vacated rows
-            for (const rk in prevRows) {
-                if (!rowMap[rk]) ctx.fillRect(x, (rk | 0) * fw, fw, fw);
-            }
-
-            // Draw occupied rows
-            for (const rk in rowMap) {
-                const row   = rk | 0;
-                const entry = rowMap[rk];
-                const cy    = row * fw;
-
-                ctx.fillRect(x, cy, fw, fw);
-
-                if (entry.isHead) {
-                    ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
-                    ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
-                    ctx.fillText(entry.char, x - 1, cy + fw - 2);
-                    ctx.fillText(entry.char, x + 1, cy + fw - 2);
-                    ctx.fillText(entry.char, x,     cy + fw - 3);
-                    ctx.fillText(entry.char, x,     cy + fw - 1);
-                    ctx.fillStyle = `rgb(${rb},255,${rb})`;
-                    ctx.fillText(entry.char, x, cy + fw - 2);
-                    ctx.fillStyle = bgColor;
-                } else {
-                    const ratio  = entry.brightness / entry.steps;
-                    const cl     = ratio > 1 ? 1 : ratio;
-                    // Approximate x^1.8 as x^2 for performance (visually near-identical)
-                    const base_g = cl * cl * 255 | 0;
-                    const g      = base_g + (bIntens * 220 | 0);
-                    const trb    = bIntens * cl * 230 | 0;
-                    ctx.fillStyle = `rgb(${trb},${g > 255 ? 255 : g},${trb})`;
-                    ctx.fillText(entry.char, x, cy + fw - 2);
-                    ctx.fillStyle = bgColor;
                 }
             }
         }
