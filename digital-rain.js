@@ -132,6 +132,16 @@ class DigitalRain {
         };
     }
 
+    // Second stream is same speed or up to 4 frames slower than primary
+    _makeSecondStream(primarySpeed, delayMax) {
+        const speed = primarySpeed + (Math.random() * 5 | 0);
+        return {
+            row: 0, speed, steps: this._makeSteps(speed),
+            delay: Math.random() * (delayMax ?? 30) | 0,
+            trails: [], active: true, suppressTicks: 0,
+        };
+    }
+
     _mount() {
         const el = this._el, cfg = this._cfg;
         if (window.getComputedStyle(el).position === 'static') el.style.position = 'relative';
@@ -287,7 +297,7 @@ class DigitalRain {
                 && col.streams[0].speed <= cfg.fastSpeedMax) {
                 if (--col.spawnCD <= 0) {
                     if (col.streams[0].row > cfg.dualStreamMinGap * 2) {
-                        col.streams.push(this._makeStream(30));
+                        col.streams.push(this._makeSecondStream(col.streams[0].speed, 30));
                     }
                     col.spawnCD = cfg.dualStreamCooldownMin +
                         (Math.random() * (cfg.dualStreamCooldownMax - cfg.dualStreamCooldownMin) | 0);
