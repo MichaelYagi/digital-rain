@@ -83,10 +83,10 @@ class DigitalRain {
             // frameSkip: how many frames to wait between steps (lower = faster)
             // weight: 0–100, relative probability (should sum to 100)
             speedTiers: [
-                { frameSkip: 2,  weight: 50 },   // fast
-                { frameSkip: 6,  weight: 40 },   // medium
-                { frameSkip: 12, weight: 5 },   // slow
-                { frameSkip: 18, weight: 5 },   // super slow
+                { frameSkip: 2,  weight: 70 },   // fast
+                { frameSkip: 4,  weight: 30 },   // medium
+                { frameSkip: 10, weight: 0 },   // slow
+                { frameSkip: 13, weight: 0 },   // super slow
             ],
 
             // ── Dual stream frequency (0–100) ──────────────────────────────
