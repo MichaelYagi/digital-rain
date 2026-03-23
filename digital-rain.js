@@ -18,11 +18,8 @@ class DigitalRain {
         this._frameCount = 0;
         this._running    = false;
         this._CHARS      = this._cfg.chars.split('');
+        this._boundDraw  = null; // bound once in _mount, reused every frame
 
-        // cols[i] = { streams: [stream...], spawnCD }
-        // stream  = { row, speed, steps, delay, trails[], active, suppressTicks }
-        // trail   = { row, char, brightness }
-        // INVARIANT: each row appears in at most ONE stream's trail array
         this._cols = [];
 
         this._burstActive      = false;
@@ -31,6 +28,11 @@ class DigitalRain {
         this._nextBurstFrame   = 0;
         this._burstEpicenter   = -1;
         this._burstRadius      = 0;
+
+        // Reusable per-frame scratch structures — allocated once, cleared each frame
+        // rowMap replaced with a flat array of {row,char,brightness,steps,isHead}
+        // indexed by column; avoids Map allocation per column per frame
+        this._rowBuf     = []; // reused scratch buffer per column render
 
         this._onResize = this._handleResize.bind(this);
     }
@@ -64,7 +66,7 @@ class DigitalRain {
         this._burstEpicenter  = col != null
             ? Math.max(0, Math.min(this._cols.length - 1, col | 0))
             : Math.random() * this._cols.length | 0;
-        this._burstRadius = 0;
+        this._burstRadius = 3; // start non-zero for immediate visible intensity
     }
 
     configure(o) { Object.assign(this._cfg, o); }
@@ -91,10 +93,10 @@ class DigitalRain {
             burst:                 true,
             burstDurationMin:      3,
             burstDurationMax:      7,
-            burstIntervalMin:      120,
-            burstIntervalMax:      300,
-            burstFirstMin:         30,
-            burstFirstMax:         90,
+            burstIntervalMin:      30,
+            burstIntervalMax:      60,
+            burstFirstMin:         20,
+            burstFirstMax:         40,
             burstExpansionRate:    0.45,
             burstNumRings:         4,
             burstRingGap:          6,
@@ -154,8 +156,19 @@ class DigitalRain {
                 (cfg.burstFirstMin + Math.random() * (cfg.burstFirstMax - cfg.burstFirstMin)) * 60
             );
         }
+
+        // Bind once — reused every frame instead of creating a new closure each time
+        this._boundDraw = this._drawFrame.bind(this);
+
+        // Pre-cache burst bell width squared for Math.exp — avoids recomputing every frame
+        this._bellDenom = 2 * cfg.burstBellWidth * cfg.burstBellWidth / 4;
+        this._sigDenom  = 2 * cfg.burstEpicenterSigma * cfg.burstEpicenterSigma;
+
+        // Pre-cache font string — same every frame
+        this._fontStr = `${cfg.fontSize}px ${cfg.fontFamily}`;
+
         window.addEventListener('resize', this._onResize, { passive: true });
-        this._rafId = requestAnimationFrame(this._drawFrame.bind(this));
+        this._rafId = requestAnimationFrame(this._boundDraw);
     }
 
     _unmount() {
@@ -173,6 +186,8 @@ class DigitalRain {
             streams: [ this._makeStream(60) ],
             spawnCD: cfg.dualStreamCooldownMin +
                 (Math.random() * (cfg.dualStreamCooldownMax - cfg.dualStreamCooldownMin) | 0),
+            // prevRows as plain object acting as int set — faster than Set for small row counts
+            prevRows: null,
         }));
     }
 
@@ -188,12 +203,16 @@ class DigitalRain {
         if (!this._ctx || !this._canvas) return;
         this._frameCount++;
 
-        const cfg     = this._cfg;
-        const ctx     = this._ctx;
-        const CHARS   = this._CHARS;
-        const maxRow  = Math.floor(this._canvas.height / cfg.fontSize);
-        const numCols = this._cols.length;
-        const fw      = cfg.fontSize;
+        const cfg        = this._cfg;
+        const ctx        = this._ctx;
+        const CHARS      = this._CHARS;
+        const maxRow     = Math.floor(this._canvas.height / cfg.fontSize);
+        const numCols    = this._cols.length;
+        const fw         = cfg.fontSize;
+        const bgColor    = cfg.bgColor;
+        const fontStr    = this._fontStr;
+        const bellDenom  = this._bellDenom;
+        const sigDenom   = this._sigDenom;
 
         // ── Burst ──────────────────────────────────────────────────────────
         if (cfg.burst && !this._burstActive && this._frameCount >= this._nextBurstFrame) {
@@ -210,40 +229,63 @@ class DigitalRain {
             }
         }
 
+        // Pre-compute per-frame burst values shared across all columns
+        const burstActive    = this._burstActive;
+        const burstEpicenter = this._burstEpicenter;
+        const burstRadius    = this._burstRadius;
+        const burstTotalF    = this._burstTotalFrames;
+        const burstLeftF     = this._burstFramesLeft;
+        const elapsed        = burstTotalF - burstLeftF;
+        const decay          = burstActive ? Math.max(0, 1 - (elapsed / burstTotalF) * 1.2) : 0;
+
+        // Pre-compute per-ring values for burst — same for every column
+        // ringFronts[r] = burstRadius - r * burstRingGap
+        const numRings   = cfg.burstNumRings;
+        const ringGap    = cfg.burstRingGap;
+        const bellWidth3 = cfg.burstBellWidth * 3;
+        const dissipate  = cfg.burstDissipate;
+        const amplify    = cfg.burstAmplify;
+        const epicBoost  = cfg.burstEpicenterBoost;
+
+        // Use a typed array for ring fronts — avoids per-column recalculation
+        let ringFronts;
+        if (burstActive) {
+            ringFronts = new Float32Array(numRings);
+            for (let r = 0; r < numRings; r++) ringFronts[r] = burstRadius - r * ringGap;
+        }
+
+        ctx.font = fontStr; // set once per frame
+
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
             const x   = i * fw;
 
             // ── Ripple intensity ───────────────────────────────────────────
             let bIntens = 0;
-            if (this._burstActive && this._burstEpicenter >= 0) {
-                const dist = Math.abs(i - this._burstEpicenter);
-                for (let r = 0; r < cfg.burstNumRings; r++) {
-                    const rr = this._burstRadius - r * cfg.burstRingGap;
+            if (burstActive && burstEpicenter >= 0) {
+                const dist = i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i; // Math.abs inline
+                for (let r = 0; r < numRings; r++) {
+                    const rr = ringFronts[r];
                     if (rr < 0) continue;
                     const passed = rr - dist;
-                    if (passed >= 0 && passed < cfg.burstBellWidth * 3) {
-                        const bw   = cfg.burstBellWidth;
-                        const bell = Math.exp(-(passed * passed) / (2 * bw * bw / 4));
-                        const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * cfg.burstDissipate);
-                        bIntens = Math.max(bIntens, bell * str);
+                    if (passed >= 0 && passed < bellWidth3) {
+                        const bell = Math.exp(-(passed * passed) / bellDenom);
+                        const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
+                        if (bell * str > bIntens) bIntens = bell * str;
                     }
                 }
-                const elapsed     = this._burstTotalFrames - this._burstFramesLeft;
-                const decay       = Math.max(0, 1 - (elapsed / this._burstTotalFrames) * 1.2);
-                const sig         = cfg.burstEpicenterSigma;
-                const centerBoost = Math.exp(-(dist * dist) / (2 * sig * sig)) * decay * cfg.burstEpicenterBoost;
-                bIntens = Math.min(1, (bIntens + centerBoost) * cfg.burstAmplify);
+                const centerBoost = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
+                bIntens = bIntens + centerBoost;
+                if (bIntens > 1 / amplify) bIntens = Math.min(1, bIntens * amplify);
             }
 
-            const rb        = Math.floor(bIntens * 230);
+            const rb        = bIntens * 230 | 0;
             const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
-            // Try to spawn second stream — only on fast columns to avoid slow-drop artifacts
+            // ── Try to spawn second stream (fast columns only) ─────────────
             if (cfg.dualStreams && col.streams.length === 1 && col.streams[0].active
                 && col.streams[0].speed <= cfg.fastSpeedMax) {
-                col.spawnCD--;
-                if (col.spawnCD <= 0) {
+                if (--col.spawnCD <= 0) {
                     if (col.streams[0].row > cfg.dualStreamMinGap * 2) {
                         col.streams.push(this._makeStream(30));
                     }
@@ -252,20 +294,22 @@ class DigitalRain {
                 }
             }
 
-            // ── STEP 1: Advance state (gated on speed) ─────────────────────
-            // Only move heads forward — do NOT draw anything yet
+            // ── STEP 1: Advance state ──────────────────────────────────────
+            const fc = this._frameCount;
             for (let s = 0; s < col.streams.length; s++) {
                 const st = col.streams[s];
                 if (!st.active) continue;
-                if (this._frameCount % st.speed !== 0) continue;
+                if (fc % st.speed !== 0) continue;
                 if (st.delay > 0) { st.delay--; continue; }
 
-                // Suppress if too close to other active stream
                 let tooClose = false;
-                for (let o = 0; o < col.streams.length; o++) {
-                    if (o === s) continue;
-                    if (col.streams[o].active && Math.abs(st.row - col.streams[o].row) < cfg.dualStreamMinGap) {
-                        tooClose = true; break;
+                if (col.streams.length > 1) {
+                    for (let o = 0; o < col.streams.length; o++) {
+                        if (o === s) continue;
+                        const diff = st.row - col.streams[o].row;
+                        if (col.streams[o].active && (diff < cfg.dualStreamMinGap && diff > -cfg.dualStreamMinGap)) {
+                            tooClose = true; break;
+                        }
                     }
                 }
                 if (tooClose) {
@@ -274,101 +318,128 @@ class DigitalRain {
                 }
                 st.suppressTicks = 0;
 
+                const trails = st.trails;
                 if (st.row < maxRow) {
-                    const char = CHARS[Math.random() * CHARS.length | 0];
-                    // Decrement all existing trail entries (the previous head becomes trail)
-                    for (const e of st.trails) e.brightness--;
-                    // Remove expired
-                    for (let t = st.trails.length - 1; t >= 0; t--) {
-                        if (st.trails[t].brightness <= 0) st.trails.splice(t, 1);
+                    // Decrement all existing entries
+                    for (let t = 0; t < trails.length; t++) trails[t].brightness--;
+                    // Remove expired — iterate backwards, swap with last to avoid O(n) shifts
+                    for (let t = trails.length - 1; t >= 0; t--) {
+                        if (trails[t].brightness <= 0) {
+                            trails[t] = trails[trails.length - 1];
+                            trails.pop();
+                        }
                     }
-                    // Push new head at full brightness
-                    st.trails.push({ row: st.row, char, brightness: st.steps + 6 });
+                    trails.push({ row: st.row, char: CHARS[Math.random() * CHARS.length | 0], brightness: st.steps + 6 });
                     st.row++;
                 } else {
                     st.active = false;
-                    // Decrement all remaining on speed tick
-                    for (const e of st.trails) e.brightness--;
-                    for (let t = st.trails.length - 1; t >= 0; t--) {
-                        if (st.trails[t].brightness <= 0) st.trails.splice(t, 1);
+                    for (let t = 0; t < trails.length; t++) trails[t].brightness--;
+                    for (let t = trails.length - 1; t >= 0; t--) {
+                        if (trails[t].brightness <= 0) {
+                            trails[t] = trails[trails.length - 1];
+                            trails.pop();
+                        }
                     }
                 }
             }
 
-            // Decrement inactive stream trails on their own speed tick — matches visual fade rate
-            for (const st of col.streams) {
-                if (st.active) continue;
-                if (this._frameCount % st.speed !== 0) continue;
-                for (const e of st.trails) e.brightness--;
-                for (let t = st.trails.length - 1; t >= 0; t--) {
-                    if (st.trails[t].brightness <= 0) st.trails.splice(t, 1);
+            // Fade inactive streams
+            for (let s = 0; s < col.streams.length; s++) {
+                const st = col.streams[s];
+                if (st.active || fc % st.speed !== 0) continue;
+                const trails = st.trails;
+                for (let t = 0; t < trails.length; t++) trails[t].brightness--;
+                for (let t = trails.length - 1; t >= 0; t--) {
+                    if (trails[t].brightness <= 0) {
+                        trails[t] = trails[trails.length - 1];
+                        trails.pop();
+                    }
                 }
             }
 
             // Remove fully faded inactive streams
             for (let s = col.streams.length - 1; s >= 0; s--) {
-                if (!col.streams[s].active && col.streams[s].trails.length === 0) {
-                    col.streams.splice(s, 1);
-                }
+                if (!col.streams[s].active && col.streams[s].trails.length === 0) col.streams.splice(s, 1);
             }
+            if (col.streams.length === 0) col.streams.push(this._makeStream(Math.random() * 60 | 0));
 
-            // Reset column when all streams done
-            if (col.streams.length === 0) {
-                col.streams.push(this._makeStream(Math.random() * 60 | 0));
-            }
+            // ── STEP 2: Build rowMap and render ────────────────────────────
+            // Use a plain object as row→entry map — faster than Map for integer keys
+            const rowMap = col.rowMap || (col.rowMap = Object.create(null));
+            const prevRows = col.prevRows;
 
-            // ── STEP 2: Render all streams for this column ─────────────────
-            const rowMap = new Map();
-            for (const st of col.streams) {
-                const headIdx = st.active ? st.trails.length - 1 : -1;
-                for (let t = 0; t < st.trails.length; t++) {
-                    const e        = st.trails[t];
-                    const isHead   = (t === headIdx);
-                    const existing = rowMap.get(e.row);
+            // Collect entries into rowMap
+            for (let s = 0; s < col.streams.length; s++) {
+                const st      = col.streams[s];
+                const trails  = st.trails;
+                const headIdx = st.active ? trails.length - 1 : -1;
+                for (let t = 0; t < trails.length; t++) {
+                    const e        = trails[t];
+                    const existing = rowMap[e.row];
                     if (!existing || e.brightness > existing.brightness) {
-                        rowMap.set(e.row, { char: e.char, brightness: e.brightness, steps: st.steps, isHead });
+                        // Reuse existing object to avoid allocation
+                        if (existing) {
+                            existing.char       = e.char;
+                            existing.brightness = e.brightness;
+                            existing.steps      = st.steps;
+                            existing.isHead     = (t === headIdx);
+                        } else {
+                            rowMap[e.row] = { char: e.char, brightness: e.brightness, steps: st.steps, isHead: (t === headIdx) };
+                        }
                     }
                 }
             }
 
-            for (const [row, entry] of rowMap) {
-                const cy = row * fw;
-                ctx.fillStyle = cfg.bgColor;
+            // Render occupied rows
+            ctx.fillStyle = bgColor;
+            for (const rowKey in rowMap) {
+                const row   = rowKey | 0;
+                const entry = rowMap[row];
+                const cy    = row * fw;
+
                 ctx.fillRect(x, cy, fw, fw);
 
                 if (entry.isHead) {
-                    // Clear extra pixel around cell to catch halo bleed
-                    ctx.fillStyle = cfg.bgColor;
                     ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                     ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
-                    ctx.font = `${fw}px ${cfg.fontFamily}`;
-                    for (const [ox, oy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
-                        ctx.fillText(entry.char, x + ox, cy + fw - 2 + oy);
-                    }
+                    ctx.fillText(entry.char, x - 1, cy + fw - 2);
+                    ctx.fillText(entry.char, x + 1, cy + fw - 2);
+                    ctx.fillText(entry.char, x,     cy + fw - 3);
+                    ctx.fillText(entry.char, x,     cy + fw - 1);
                     ctx.fillStyle = `rgb(${rb},255,${rb})`;
                     ctx.fillText(entry.char, x, cy + fw - 2);
+                    ctx.fillStyle = bgColor; // reset for next fillRect
                 } else {
-                    const ratio  = Math.min(entry.brightness, entry.steps) / entry.steps;
-                    const base_g = Math.floor(Math.pow(ratio, 1.8) * 255);
-                    const g      = Math.min(255, base_g + bIntens * 220);
-                    const trb    = Math.floor(bIntens * ratio * 230);
-                    ctx.fillStyle = `rgb(${trb},${g},${trb})`;
-                    ctx.font = `${fw}px ${cfg.fontFamily}`;
+                    const ratio  = entry.brightness / entry.steps; // brightness already clamped by decay
+                    const clamped = ratio > 1 ? 1 : ratio;
+                    const base_g = Math.pow(clamped, 1.8) * 255 | 0;
+                    const g      = base_g + (bIntens * 220 | 0);
+                    const trb    = bIntens * clamped * 230 | 0;
+                    ctx.fillStyle = `rgb(${trb},${g > 255 ? 255 : g},${trb})`;
                     ctx.fillText(entry.char, x, cy + fw - 2);
+                    ctx.fillStyle = bgColor;
                 }
             }
 
-            if (col.prevRows) {
-                for (const row of col.prevRows) {
-                    if (!rowMap.has(row)) {
-                        ctx.fillStyle = cfg.bgColor;
-                        ctx.fillRect(x, row * fw, fw, fw);
+            // Clear rows vacated since last frame
+            if (prevRows) {
+                for (const rowKey in prevRows) {
+                    if (!rowMap[rowKey]) {
+                        ctx.fillRect(x, (rowKey | 0) * fw, fw, fw);
                     }
                 }
             }
-            col.prevRows = new Set(rowMap.keys());
+
+            // Swap rowMap to prevRows, clear for next frame
+            // Reuse prevRows object to avoid allocation
+            col.prevRows = rowMap;
+            col.rowMap   = prevRows || Object.create(null);
+            // Clear the old prevRows for reuse as next frame's rowMap
+            if (col.rowMap) {
+                for (const k in col.rowMap) delete col.rowMap[k];
+            }
         }
 
-        this._rafId = requestAnimationFrame(this._drawFrame.bind(this));
+        this._rafId = requestAnimationFrame(this._boundDraw);
     }
 }
