@@ -26,6 +26,7 @@ class DigitalRain {
         this._burstTotalFrames = 0;
         this._nextBurstFrame   = 0;
         this._burstEpicenter   = -1;
+        this._burstEpicenterRow = -1;
         this._burstRadius      = 0;
 
         // Cached derived values — computed once in _mount
@@ -68,6 +69,9 @@ class DigitalRain {
         this._burstEpicenter  = col != null
             ? Math.max(0, Math.min(this._cols.length - 1, col | 0))
             : Math.random() * this._cols.length | 0;
+        this._burstEpicenterRow = this._canvas
+            ? Math.floor(this._canvas.height / this._cfg.fontSize * Math.random())
+            : 20;
         this._burstRadius = 3;
     }
 
@@ -228,7 +232,7 @@ class DigitalRain {
         if (this._canvas) { this._canvas.remove(); this._canvas = null; this._ctx = null; }
         this._cols = []; this._frameCount = 0;
         this._burstActive = false; this._burstTotalFrames = 0;
-        this._burstEpicenter = -1; this._burstRadius = 0;
+        this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
     }
 
     _initColumns() {
@@ -279,7 +283,7 @@ class DigitalRain {
             this._burstRadius = (this._burstTotalFrames - this._burstFramesLeft) * cfg.burstExpansionRate;
             if (--this._burstFramesLeft <= 0) {
                 this._burstActive = false; this._burstTotalFrames = 0;
-                this._burstEpicenter = -1; this._burstRadius = 0;
+                this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
                 this._nextBurstFrame = fc + Math.round(
                     (cfg.burstIntervalMin + Math.random() * (cfg.burstIntervalMax - cfg.burstIntervalMin)) * 60
                 );
@@ -287,8 +291,9 @@ class DigitalRain {
         }
 
         // Pre-compute burst ring fronts once per frame
-        const burstActive    = this._burstActive;
-        const burstEpicenter = this._burstEpicenter;
+        const burstActive       = this._burstActive;
+        const burstEpicenter    = this._burstEpicenter;
+        const burstEpicenterRow = this._burstEpicenterRow;
         const numRings       = cfg.burstNumRings;
         const bellWidth3     = cfg.burstBellWidth * 3;
         const dissipate      = cfg.burstDissipate;
@@ -405,32 +410,11 @@ class DigitalRain {
         ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
 
         for (let i = 0; i < numCols; i++) {
-            const col = this._cols[i];
-            const x   = i * fw;
-
-            // Recompute bIntens for render pass
-            let bIntens = 0;
-            if (burstActive && burstEpicenter >= 0) {
-                const rf   = this._ringFronts;
-                const dist = i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i;
-                for (let r = 0; r < numRings; r++) {
-                    const rr = rf[r];
-                    if (rr < 0) continue;
-                    const passed = rr - dist;
-                    if (passed >= 0 && passed < bellWidth3) {
-                        const bell = Math.exp(-(passed * passed) / bellDenom);
-                        const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
-                        if (bell * str > bIntens) bIntens = bell * str;
-                    }
-                }
-                const cb = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
-                bIntens += cb;
-                if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
-                if (bIntens > 1) bIntens = 1;
-            }
-
-            const rb        = bIntens * 230 | 0;
-            const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
+            const col   = this._cols[i];
+            const x     = i * fw;
+            const colDist = burstActive && burstEpicenter >= 0
+                ? (i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i)
+                : 0;
 
             for (let s = 0; s < col.streams.length; s++) {
                 const st      = col.streams[s];
@@ -440,6 +424,32 @@ class DigitalRain {
                 for (let t = 0; t < trails.length; t++) {
                     const e  = trails[t];
                     const cy = e.row * fw;
+
+                    // Compute bIntens per entry using 2D distance from epicenter
+                    let bIntens = 0;
+                    if (burstActive && burstEpicenter >= 0) {
+                        const rf      = this._ringFronts;
+                        const rowDist = e.row > burstEpicenterRow
+                            ? e.row - burstEpicenterRow : burstEpicenterRow - e.row;
+                        const dist2d  = Math.sqrt(colDist * colDist + rowDist * rowDist);
+                        for (let r = 0; r < numRings; r++) {
+                            const rr = rf[r];
+                            if (rr < 0) continue;
+                            const passed = rr - dist2d;
+                            if (passed >= 0 && passed < bellWidth3) {
+                                const bell = Math.exp(-(passed * passed) / bellDenom);
+                                const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
+                                if (bell * str > bIntens) bIntens = bell * str;
+                            }
+                        }
+                        const cb = Math.exp(-(dist2d * dist2d) / sigDenom) * decay * epicBoost;
+                        bIntens += cb;
+                        if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
+                        if (bIntens > 1) bIntens = 1;
+                    }
+
+                    const rb        = bIntens * 230 | 0;
+                    const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
                     if (t === headIdx) {
                         if (bIntens > 0) {
