@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Rain — Demo</title>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet"> -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -17,18 +17,6 @@
         }
 
         #rain { position: fixed; inset: 0; }
-
-        .content {
-            position: relative;
-            z-index: 1;          /* below canvas (z-index: 9999) */
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            gap: 2rem;
-            pointer-events: none;
-        }
 
         #controls {
             position: fixed;
@@ -143,12 +131,7 @@
 </head>
 <body>
 
-<div id="rain">
-    <div class="content">
-        <h1>DIGITAL RAIN</h1>
-        <p>The canvas renders above this text.</p>
-    </div>
-</div>
+<div id="rain"></div>
 
 <div id="controls">
 
@@ -156,7 +139,7 @@
     <div class="ctrl-group">
         <button class="action" onclick="rain.start()">▶ Start</button>
         <button class="action" onclick="rain.stop()">■ Stop</button>
-        <button class="action" onclick="rain.triggerBurst()">⚡ Burst</button>
+        <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
     </div>
 
     <div class="sep"></div>
@@ -166,11 +149,11 @@
         <label>SPEED</label>
         <div class="sl-row">
             <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
-            <input type="range" id="rSpeed" min="0" max="100" value="99"
+            <input type="range" id="rSpeed" min="0" max="100" value="95"
                    oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
             <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
         </div>
-        <span class="val" id="vSpeed">99</span>
+        <span class="val" id="vSpeed">95</span>
     </div>
 
     <!-- Dual frequency -->
@@ -287,7 +270,7 @@
 <script src="digital-rain.js"></script>
 <script>
     const rain = new DigitalRain('#rain', {
-        dropSpeed:       99,
+        dropSpeed:       95,
         speedTiers: [
             { frameSkip: 2,  weight: 50 },
             { frameSkip: 4,  weight: 42 },
@@ -308,6 +291,12 @@
     rain.start();
 
     function setVal(id, v) { document.getElementById(id).textContent = v; }
+
+    function toggleBurst() {
+        const on  = !rain._cfg.burst;
+        rain.configure({ burst: on });
+        document.getElementById('burstToggle').textContent = `⚡ Burst: ${on ? 'On' : 'Off'}`;
+    }
 
     function step(sliderId, delta, valId, min, max, callback) {
         const el  = document.getElementById(sliderId);
