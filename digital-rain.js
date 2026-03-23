@@ -10,16 +10,16 @@ class DigitalRain {
             ? document.querySelector(container) : container;
         if (!this._el) throw new Error(`DigitalRain: element not found — "${container}"`);
 
-        this._cfg        = Object.assign({}, DigitalRain.DEFAULTS, options);
-        this._canvas     = null;
-        this._ctx        = null;
-        this._rafId      = null;
-        this._startTimer = null;
-        this._frameCount = 0;
-        this._running    = false;
-        this._CHARS      = this._cfg.chars.split('');
-        this._boundDraw  = null;
-        this._cols       = [];
+        this._cfg       = Object.assign({}, DigitalRain.DEFAULTS, options);
+        this._canvas    = null;
+        this._ctx       = null;
+        this._rafId     = null;
+        this._startTimer= null;
+        this._frameCount= 0;
+        this._running   = false;
+        this._CHARS     = this._cfg.chars.split('');
+        this._boundDraw = null;
+        this._cols      = [];
 
         this._burstActive      = false;
         this._burstFramesLeft  = 0;
@@ -27,6 +27,14 @@ class DigitalRain {
         this._nextBurstFrame   = 0;
         this._burstEpicenter   = -1;
         this._burstRadius      = 0;
+
+        // Cached derived values — computed once in _mount
+        this._speedMult    = 1;
+        this._fastThresh   = 0;
+        this._bellDenom    = 0;
+        this._sigDenom     = 0;
+        this._fontStr      = '';
+        this._ringFronts   = null; // reused Float32Array
 
         this._onResize = this._handleResize.bind(this);
     }
@@ -74,14 +82,10 @@ class DigitalRain {
             fontFamily:      '"Share Tech Mono", "Courier New", monospace',
             chars:           'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
 
-            // ── Drop speed (0–100) ─────────────────────────────────────────
-            // 0 = frozen, 1 = barely moving, 50 = default, 100 = fastest
+            // 0=frozen, 1=barely moving, 50=default, 100=fastest
             dropSpeed:       95,
 
-            // ── Speed tiers ────────────────────────────────────────────────
-            // Each tier: { frameSkip, weight }
-            // frameSkip: how many frames to wait between steps (lower = faster)
-            // weight: 0–100, relative probability (should sum to 100)
+            // Speed tiers: frameSkip (lower=faster), weight (relative probability)
             speedTiers: [
                 { frameSkip: 2,  weight: 70 },   // fast
                 { frameSkip: 4,  weight: 30 },   // medium
@@ -89,15 +93,13 @@ class DigitalRain {
                 { frameSkip: 13, weight: 0 },   // super slow
             ],
 
-            // ── Dual stream frequency (0–100) ──────────────────────────────
-            // 0 = never, 100 = very frequent, default 50
+            // 0=never dual streams, 100=very frequent
             dualFrequency:   50,
+            dualMinGap:      10,
 
-            // Trail length range (mapped from fastest to slowest tier)
             trailLengthFast: 28,
             trailLengthSlow: 70,
 
-            // ── Burst / ripple ─────────────────────────────────────────────
             burst:              true,
             burstDurationMin:   3,
             burstDurationMax:   7,
@@ -116,74 +118,59 @@ class DigitalRain {
         };
     }
 
-    // ── Speed helpers ─────────────────────────────────────────────────────
+    // ── Helpers (called rarely, not per-frame) ────────────────────────────
 
-    // Convert dropSpeed (0–100) to a multiplier applied to all frameSkip values
-    // dropSpeed=100 → multiplier=1 (no change, fastest)
-    // dropSpeed=50  → multiplier=2 (twice as slow)
-    // dropSpeed=1   → multiplier=60 (very slow)
-    // dropSpeed=0   → multiplier=999 (frozen)
-    _speedMultiplier() {
-        const s = this._cfg.dropSpeed;
-        if (s <= 0)   return 999;
-        if (s >= 100) return 1;
-        // Exponential curve so middle values feel natural
-        return Math.round(1 + (99 - s) / 99 * 59);
+    _computeCached() {
+        const cfg = this._cfg;
+        const s   = cfg.dropSpeed;
+        this._speedMult  = s <= 0 ? 999 : s >= 100 ? 1 : Math.round(1 + (99 - s) / 99 * 59);
+        this._fastThresh = cfg.speedTiers[0].frameSkip * this._speedMult * 1.5;
+        this._bellDenom  = 2 * cfg.burstBellWidth * cfg.burstBellWidth / 4;
+        this._sigDenom   = 2 * cfg.burstEpicenterSigma * cfg.burstEpicenterSigma;
+        this._fontStr    = `${cfg.fontSize}px ${cfg.fontFamily}`;
+        this._ringFronts = new Float32Array(cfg.burstNumRings);
     }
 
-    // Pick a frameSkip value from speedTiers using weighted random selection,
-    // then apply the dropSpeed multiplier
     _makeFrameSkip() {
         const tiers = this._cfg.speedTiers;
-        const mult  = this._speedMultiplier();
-
-        // Build cumulative weights
+        const mult  = this._speedMult;
         let total = 0;
-        for (const t of tiers) total += t.weight;
+        for (let i = 0; i < tiers.length; i++) total += tiers[i].weight;
         let r = Math.random() * total;
-        for (const t of tiers) {
-            r -= t.weight;
-            if (r <= 0) return Math.max(1, t.frameSkip * mult);
+        for (let i = 0; i < tiers.length; i++) {
+            r -= tiers[i].weight;
+            if (r <= 0) return Math.max(1, tiers[i].frameSkip * mult);
         }
         return Math.max(1, tiers[tiers.length - 1].frameSkip * mult);
     }
 
     _makeSteps(frameSkip) {
-        const cfg      = this._cfg;
-        const minSkip  = this._cfg.speedTiers[0].frameSkip;
-        const maxSkip  = this._cfg.speedTiers[this._cfg.speedTiers.length - 1].frameSkip;
-        const ratio    = Math.min(1, (frameSkip - minSkip) / Math.max(1, maxSkip - minSkip));
+        const cfg     = this._cfg;
+        const tiers   = cfg.speedTiers;
+        const minSkip = tiers[0].frameSkip * this._speedMult;
+        const maxSkip = tiers[tiers.length - 1].frameSkip * this._speedMult;
+        const ratio   = maxSkip === minSkip ? 0 : Math.min(1, (frameSkip - minSkip) / (maxSkip - minSkip));
         return Math.round(cfg.trailLengthFast + (cfg.trailLengthSlow - cfg.trailLengthFast) * ratio);
     }
 
     _makeStream(delayMax) {
         const speed = this._makeFrameSkip();
-        return {
-            row: 0, speed, steps: this._makeSteps(speed),
-            delay: Math.random() * (delayMax ?? 60) | 0,
-            trails: [], active: true, suppressTicks: 0,
-        };
+        return { row: 0, speed, steps: this._makeSteps(speed),
+                 delay: Math.random() * (delayMax ?? 60) | 0,
+                 trails: [], active: true, suppressTicks: 0 };
     }
 
-    // Second stream: same frameSkip as primary (trails exactly behind it)
     _makeSecondStream(primarySpeed, delayMax) {
-        return {
-            row: 0, speed: primarySpeed, steps: this._makeSteps(primarySpeed),
-            delay: Math.random() * (delayMax ?? 30) | 0,
-            trails: [], active: true, suppressTicks: 0,
-        };
+        return { row: 0, speed: primarySpeed, steps: this._makeSteps(primarySpeed),
+                 delay: Math.random() * (delayMax ?? 30) | 0,
+                 trails: [], active: true, suppressTicks: 0 };
     }
 
-    // Convert dualFrequency (0–100) to cooldown range
-    // freq=100 → cooldown 10–30 frames (very frequent)
-    // freq=50  → cooldown 60–200 frames (default)
-    // freq=0   → cooldown 999999 (never)
     _dualCooldown() {
         const f = this._cfg.dualFrequency;
         if (f <= 0) return 999999;
-        // Map 1–100 to cooldown min of 10–200 (inverse)
-        const min = Math.round(10 + (100 - f) / 100 * 190);
-        const max = min + Math.round(20 + (100 - f) / 100 * 180);
+        const min = 10 + (100 - f) / 100 * 190 | 0;
+        const max = min + (20 + (100 - f) / 100 * 180 | 0);
         return min + (Math.random() * (max - min) | 0);
     }
 
@@ -206,6 +193,8 @@ class DigitalRain {
 
         el.appendChild(this._canvas);
         this._ctx = this._canvas.getContext('2d');
+
+        this._computeCached();
         this._initColumns();
 
         if (cfg.burst) {
@@ -215,10 +204,6 @@ class DigitalRain {
         }
 
         this._boundDraw = this._drawFrame.bind(this);
-        this._bellDenom = 2 * cfg.burstBellWidth * cfg.burstBellWidth / 4;
-        this._sigDenom  = 2 * cfg.burstEpicenterSigma * cfg.burstEpicenterSigma;
-        this._fontStr   = `${cfg.fontSize}px ${cfg.fontFamily}`;
-
         window.addEventListener('resize', this._onResize, { passive: true });
         this._rafId = requestAnimationFrame(this._boundDraw);
     }
@@ -236,8 +221,10 @@ class DigitalRain {
         this._cols = Array.from({ length: n }, () => ({
             streams:  [ this._makeStream(60) ],
             spawnCD:  this._dualCooldown(),
-            prevRows: null,
-            rowMap:   null,
+            // Two plain objects swapped each frame as rowMap/prevRows — no allocation
+            mapA:     Object.create(null),
+            mapB:     Object.create(null),
+            useA:     true,
         }));
     }
 
@@ -246,6 +233,7 @@ class DigitalRain {
         const rect = this._el.getBoundingClientRect();
         this._canvas.width  = rect.width  || this._el.offsetWidth  || this._el.clientWidth  || window.innerWidth;
         this._canvas.height = rect.height || this._el.offsetHeight || this._el.clientHeight || window.innerHeight;
+        this._computeCached();
         this._initColumns();
     }
 
@@ -264,9 +252,12 @@ class DigitalRain {
         const bgColor    = cfg.bgColor;
         const bellDenom  = this._bellDenom;
         const sigDenom   = this._sigDenom;
+        const fastThresh = this._fastThresh;
+        const minGap     = cfg.dualMinGap;
+        const fc         = this._frameCount;
 
         // ── Burst ──────────────────────────────────────────────────────────
-        if (cfg.burst && !this._burstActive && this._frameCount >= this._nextBurstFrame) {
+        if (cfg.burst && !this._burstActive && fc >= this._nextBurstFrame) {
             this.triggerBurst();
         }
         if (this._burstActive) {
@@ -274,35 +265,32 @@ class DigitalRain {
             if (--this._burstFramesLeft <= 0) {
                 this._burstActive = false; this._burstTotalFrames = 0;
                 this._burstEpicenter = -1; this._burstRadius = 0;
-                this._nextBurstFrame = this._frameCount + Math.round(
+                this._nextBurstFrame = fc + Math.round(
                     (cfg.burstIntervalMin + Math.random() * (cfg.burstIntervalMax - cfg.burstIntervalMin)) * 60
                 );
             }
         }
 
+        // Pre-compute burst ring fronts once per frame
         const burstActive    = this._burstActive;
         const burstEpicenter = this._burstEpicenter;
-        const burstRadius    = this._burstRadius;
-        const burstTotalF    = this._burstTotalFrames;
-        const burstLeftF     = this._burstFramesLeft;
-        const elapsed        = burstTotalF - burstLeftF;
-        const decay          = burstActive ? Math.max(0, 1 - (elapsed / burstTotalF) * 1.2) : 0;
+        const numRings       = cfg.burstNumRings;
+        const bellWidth3     = cfg.burstBellWidth * 3;
+        const dissipate      = cfg.burstDissipate;
+        const amplify        = cfg.burstAmplify;
+        const epicBoost      = cfg.burstEpicenterBoost;
+        let decay = 0;
 
-        const numRings   = cfg.burstNumRings;
-        const ringGap    = cfg.burstRingGap;
-        const bellWidth3 = cfg.burstBellWidth * 3;
-        const dissipate  = cfg.burstDissipate;
-        const amplify    = cfg.burstAmplify;
-        const epicBoost  = cfg.burstEpicenterBoost;
-        const minGap     = cfg.dualFrequency > 0 ? 10 : 999999; // dualStreamMinGap
-
-        let ringFronts;
         if (burstActive) {
-            ringFronts = new Float32Array(numRings);
-            for (let r = 0; r < numRings; r++) ringFronts[r] = burstRadius - r * ringGap;
+            const elapsed = this._burstTotalFrames - this._burstFramesLeft;
+            decay = Math.max(0, 1 - (elapsed / this._burstTotalFrames) * 1.2);
+            const rf = this._ringFronts;
+            const rg = cfg.burstRingGap;
+            const br = this._burstRadius;
+            for (let r = 0; r < numRings; r++) rf[r] = br - r * rg;
         }
 
-        ctx.font = this._fontStr;
+        ctx.font = this._fontStr; // set once per frame
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
@@ -311,9 +299,10 @@ class DigitalRain {
             // ── Ripple intensity ───────────────────────────────────────────
             let bIntens = 0;
             if (burstActive && burstEpicenter >= 0) {
+                const rf   = this._ringFronts;
                 const dist = i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i;
                 for (let r = 0; r < numRings; r++) {
-                    const rr = ringFronts[r];
+                    const rr = rf[r];
                     if (rr < 0) continue;
                     const passed = rr - dist;
                     if (passed >= 0 && passed < bellWidth3) {
@@ -322,18 +311,18 @@ class DigitalRain {
                         if (bell * str > bIntens) bIntens = bell * str;
                     }
                 }
-                const centerBoost = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
-                bIntens = bIntens + centerBoost;
-                if (bIntens > 1 / amplify) bIntens = Math.min(1, bIntens * amplify);
+                const cb = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
+                bIntens += cb;
+                if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
+                if (bIntens > 1) bIntens = 1;
             }
 
             const rb        = bIntens * 230 | 0;
             const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
             // ── Try to spawn second stream ─────────────────────────────────
-            // Only on fast columns (smallest frameSkip tier), controlled by dualFrequency
             if (cfg.dualFrequency > 0 && col.streams.length === 1 && col.streams[0].active
-                && col.streams[0].speed <= cfg.speedTiers[0].frameSkip * this._speedMultiplier() * 1.5) {
+                && col.streams[0].speed <= fastThresh) {
                 if (--col.spawnCD <= 0) {
                     if (col.streams[0].row > minGap * 2) {
                         col.streams.push(this._makeSecondStream(col.streams[0].speed, 30));
@@ -343,26 +332,19 @@ class DigitalRain {
             }
 
             // ── STEP 1: Advance state ──────────────────────────────────────
-            const fc = this._frameCount;
             for (let s = 0; s < col.streams.length; s++) {
                 const st = col.streams[s];
-                if (!st.active) continue;
-                if (fc % st.speed !== 0) continue;
+                if (!st.active || fc % st.speed !== 0) continue;
                 if (st.delay > 0) { st.delay--; continue; }
 
-                let tooClose = false;
                 if (col.streams.length > 1) {
+                    let tooClose = false;
                     for (let o = 0; o < col.streams.length; o++) {
                         if (o === s) continue;
                         const diff = st.row - col.streams[o].row;
-                        if (col.streams[o].active && diff < minGap && diff > -minGap) {
-                            tooClose = true; break;
-                        }
+                        if (col.streams[o].active && diff < minGap && diff > -minGap) { tooClose = true; break; }
                     }
-                }
-                if (tooClose) {
-                    if (++st.suppressTicks > 120) st.active = false;
-                    continue;
+                    if (tooClose) { if (++st.suppressTicks > 120) st.active = false; continue; }
                 }
                 st.suppressTicks = 0;
 
@@ -399,9 +381,13 @@ class DigitalRain {
             }
             if (col.streams.length === 0) col.streams.push(this._makeStream(Math.random() * 60 | 0));
 
-            // ── STEP 2: Render ─────────────────────────────────────────────
-            const rowMap   = col.rowMap   || (col.rowMap   = Object.create(null));
-            const prevRows = col.prevRows;
+            // ── STEP 2: Build rowMap (swap A/B, clear previous) ────────────
+            const rowMap   = col.useA ? col.mapA : col.mapB;
+            const prevRows = col.useA ? col.mapB : col.mapA;
+            col.useA = !col.useA;
+
+            // Clear rowMap (was prevRows last frame — already iterated, safe to wipe)
+            for (const k in rowMap) delete rowMap[k];
 
             for (let s = 0; s < col.streams.length; s++) {
                 const st      = col.streams[s];
@@ -415,16 +401,25 @@ class DigitalRain {
                             existing.char = e.char; existing.brightness = e.brightness;
                             existing.steps = st.steps; existing.isHead = (t === headIdx);
                         } else {
-                            rowMap[e.row] = { char: e.char, brightness: e.brightness, steps: st.steps, isHead: (t === headIdx) };
+                            rowMap[e.row] = { char: e.char, brightness: e.brightness,
+                                              steps: st.steps, isHead: (t === headIdx) };
                         }
                     }
                 }
             }
 
+            // ── Render ─────────────────────────────────────────────────────
             ctx.fillStyle = bgColor;
-            for (const rowKey in rowMap) {
-                const row   = rowKey | 0;
-                const entry = rowMap[row];
+
+            // Clear vacated rows
+            for (const rk in prevRows) {
+                if (!rowMap[rk]) ctx.fillRect(x, (rk | 0) * fw, fw, fw);
+            }
+
+            // Draw occupied rows
+            for (const rk in rowMap) {
+                const row   = rk | 0;
+                const entry = rowMap[rk];
                 const cy    = row * fw;
 
                 ctx.fillRect(x, cy, fw, fw);
@@ -440,26 +435,17 @@ class DigitalRain {
                     ctx.fillText(entry.char, x, cy + fw - 2);
                     ctx.fillStyle = bgColor;
                 } else {
-                    const ratio   = entry.brightness / entry.steps;
-                    const clamped = ratio > 1 ? 1 : ratio;
-                    const base_g  = Math.pow(clamped, 1.8) * 255 | 0;
-                    const g       = base_g + (bIntens * 220 | 0);
-                    const trb     = bIntens * clamped * 230 | 0;
+                    const ratio  = entry.brightness / entry.steps;
+                    const cl     = ratio > 1 ? 1 : ratio;
+                    // Approximate x^1.8 as x^2 for performance (visually near-identical)
+                    const base_g = cl * cl * 255 | 0;
+                    const g      = base_g + (bIntens * 220 | 0);
+                    const trb    = bIntens * cl * 230 | 0;
                     ctx.fillStyle = `rgb(${trb},${g > 255 ? 255 : g},${trb})`;
                     ctx.fillText(entry.char, x, cy + fw - 2);
                     ctx.fillStyle = bgColor;
                 }
             }
-
-            if (prevRows) {
-                for (const rowKey in prevRows) {
-                    if (!rowMap[rowKey]) ctx.fillRect(x, (rowKey | 0) * fw, fw, fw);
-                }
-            }
-
-            col.prevRows = rowMap;
-            col.rowMap   = prevRows || Object.create(null);
-            if (col.rowMap) { for (const k in col.rowMap) delete col.rowMap[k]; }
         }
 
         this._rafId = requestAnimationFrame(this._boundDraw);
