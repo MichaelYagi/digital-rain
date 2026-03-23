@@ -404,14 +404,30 @@ class DigitalRain {
             if (col.streams.length === 0) col.streams.push(this._makeStream(Math.random() * 60 | 0));
         }
 
-        // ── STEP 2: Clear entire canvas, then redraw all trails ────────────
-        // Single fillRect is faster than hundreds of per-cell clears + object churn
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-
+        // ── STEP 2: Per-cell render with Uint8Array row tracking ───────────
         for (let i = 0; i < numCols; i++) {
-            const col   = this._cols[i];
-            const x     = i * fw;
+            const col = this._cols[i];
+            const x   = i * fw;
+
+            // Allocate Uint8Arrays on first use
+            if (!col.curRows)  col.curRows  = new Uint8Array(maxRow);
+            if (!col.prevRows) col.prevRows = new Uint8Array(maxRow);
+
+            col.curRows.fill(0);
+            for (let s = 0; s < col.streams.length; s++) {
+                const trails = col.streams[s].trails;
+                for (let t = 0; t < trails.length; t++) {
+                    const r = trails[t].row;
+                    if (r < maxRow) col.curRows[r] = 1;
+                }
+            }
+
+            // Clear vacated rows
+            ctx.fillStyle = bgColor;
+            for (let r = 0; r < maxRow; r++) {
+                if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
+            }
+
             const colDist = burstActive && burstEpicenter >= 0
                 ? (i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i)
                 : 0;
@@ -425,7 +441,7 @@ class DigitalRain {
                     const e  = trails[t];
                     const cy = e.row * fw;
 
-                    // Compute bIntens per entry using 2D distance from epicenter
+                    // Per-entry 2D bIntens
                     let bIntens = 0;
                     if (burstActive && burstEpicenter >= 0) {
                         const rf      = this._ringFronts;
@@ -451,7 +467,12 @@ class DigitalRain {
                     const rb        = bIntens * 230 | 0;
                     const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
+                    // Clear cell then draw
+                    ctx.fillStyle = bgColor;
+                    ctx.fillRect(x, cy, fw, fw);
+
                     if (t === headIdx) {
+                        ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                         if (bIntens > 0) {
                             ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
@@ -483,6 +504,11 @@ class DigitalRain {
                     }
                 }
             }
+
+            // Swap cur/prev
+            const tmp    = col.prevRows;
+            col.prevRows = col.curRows;
+            col.curRows  = tmp;
         }
 
         this._rafId = requestAnimationFrame(this._boundDraw);
