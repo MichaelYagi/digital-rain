@@ -77,14 +77,9 @@ class DigitalRain {
 
     configure(o) {
         Object.assign(this._cfg, o);
-        if (this._canvas) {
-            // Clear canvas so old state doesn't linger during reinit
-            const ctx = this._ctx;
-            ctx.fillStyle = this._cfg.bgColor;
-            ctx.fillRect(0, 0, this._canvas.width, this._canvas.height);
-            this._computeCached();
-            this._initColumns();
-        }
+        // Recompute cached derived values (bell denom, sig denom, font string etc.)
+        // but do NOT reinit columns — existing streams continue, new ones pick up new config
+        if (this._canvas) this._computeCached();
     }
 
     static get DEFAULTS() {
@@ -406,10 +401,9 @@ class DigitalRain {
 
         // ── STEP 2: Per-cell render with Uint8Array row tracking ───────────
         for (let i = 0; i < numCols; i++) {
-            const col = this._cols[i];
-            const x   = i * fw;
+            const col     = this._cols[i];
+            const x       = i * fw;
 
-            // Allocate Uint8Arrays on first use
             if (!col.curRows)  col.curRows  = new Uint8Array(maxRow);
             if (!col.prevRows) col.prevRows = new Uint8Array(maxRow);
 
@@ -422,7 +416,6 @@ class DigitalRain {
                 }
             }
 
-            // Clear vacated rows
             ctx.fillStyle = bgColor;
             for (let r = 0; r < maxRow; r++) {
                 if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
@@ -467,7 +460,6 @@ class DigitalRain {
                     const rb        = bIntens * 230 | 0;
                     const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
-                    // Clear cell then draw
                     ctx.fillStyle = bgColor;
                     ctx.fillRect(x, cy, fw, fw);
 
@@ -505,7 +497,6 @@ class DigitalRain {
                 }
             }
 
-            // Swap cur/prev
             const tmp    = col.prevRows;
             col.prevRows = col.curRows;
             col.curRows  = tmp;
