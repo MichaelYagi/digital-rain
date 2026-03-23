@@ -76,10 +76,21 @@ class DigitalRain {
     }
 
     configure(o) {
+        const prevSpeed = this._cfg.dropSpeed;
         Object.assign(this._cfg, o);
-        // Recompute cached derived values (bell denom, sig denom, font string etc.)
-        // but do NOT reinit columns — existing streams continue, new ones pick up new config
-        if (this._canvas) this._computeCached();
+        if (this._canvas) {
+            this._computeCached();
+            // If dropSpeed changed, recompute speed/steps on all existing streams
+            // so frozen streams (speed=999) wake up immediately
+            if (o.dropSpeed !== undefined && o.dropSpeed !== prevSpeed) {
+                for (const col of this._cols) {
+                    for (const st of col.streams) {
+                        st.speed = this._makeFrameSkip();
+                        st.steps = this._makeSteps(st.speed);
+                    }
+                }
+            }
+        }
     }
 
     static get DEFAULTS() {
