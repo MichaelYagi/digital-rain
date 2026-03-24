@@ -29,6 +29,8 @@ class DigitalRain {
         this._burstEpicenter   = -1;
         this._burstEpicenterRow = -1;
         this._burstRadius      = 0;
+        this._burstAngle       = 0;
+        this._burstNoise       = null;
 
         // Cached derived values — computed once in _mount
         this._speedMult    = 1;
@@ -66,14 +68,32 @@ class DigitalRain {
         this._burstTotalFrames = Math.round(
             (cfg.burstDurationMin + Math.random() * (cfg.burstDurationMax - cfg.burstDurationMin)) * 60
         );
-        this._burstFramesLeft = this._burstTotalFrames;
-        this._burstEpicenter  = col != null
+        this._burstFramesLeft  = this._burstTotalFrames;
+        this._burstEpicenter   = col != null
             ? Math.max(0, Math.min(this._cols.length - 1, col | 0))
             : Math.random() * this._cols.length | 0;
         this._burstEpicenterRow = this._canvas
             ? Math.floor(this._canvas.height / this._cfg.fontSize * Math.random())
             : 20;
-        this._burstRadius = 3;
+        // Random bolt angle: positive or negative drift, and random direction bias
+        this._burstAngle = (Math.random() < 0.5 ? 1 : -1) *
+            (cfg.burstAngle * (0.5 + Math.random()));
+        this._burstRadius = 3; // kept for API compat
+        this._burstNoise  = this._makeBurstNoise(this._burstEpicenter);
+    }
+
+    _makeBurstNoise(epi) {
+        const n     = this._cols.length;
+        const reach = this._cfg.burstReach || 80;
+        const noise = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const absDelta = i > epi ? i - epi : epi - i;
+            const edgeBias = absDelta / reach;
+            noise[i] = Math.max(0, Math.min(1,
+                edgeBias * 0.7 + Math.random() * 0.5 - 0.1
+            ));
+        }
+        return noise;
     }
 
     configure(o) {
@@ -122,20 +142,16 @@ class DigitalRain {
             trailLengthSlow: 70,
 
             burst:              true,
-            burstDurationMin:   3,
-            burstDurationMax:   7,
+            burstDurationMin:   6,
+            burstDurationMax:   12,
             burstIntervalMin:   30,
             burstIntervalMax:   60,
             burstFirstMin:      20,
             burstFirstMax:      40,
-            burstExpansionRate: 0.45,
-            burstNumRings:      4,
-            burstRingGap:       6,
-            burstBellWidth:     3,
-            burstDissipate:     0.014,
-            burstAmplify:       2.5,
-            burstEpicenterSigma:3,
-            burstEpicenterBoost:0.9,
+            burstExpansionRate: 0.45,   // unused legacy — kept for API compat
+            burstWidth:         6,       // row half-width of the bolt (falloff in rows)
+            burstReach:         80,      // how many columns the bolt extends left/right
+            burstAngle:         0.18,    // row drift per column (steepness of the bolt)
 
             // Click/tap on canvas to trigger burst at that position
             tapToBurst:     false,
@@ -149,10 +165,8 @@ class DigitalRain {
         const s   = cfg.dropSpeed;
         this._speedMult  = s <= 0 ? 999 : s >= 100 ? 1 : Math.round(1 + (99 - s) / 99 * 59);
         this._fastThresh = cfg.speedTiers[0].frameSkip * this._speedMult * 1.5;
-        this._bellDenom  = 2 * cfg.burstBellWidth * cfg.burstBellWidth / 4;
-        this._sigDenom   = 2 * cfg.burstEpicenterSigma * cfg.burstEpicenterSigma;
         this._fontStr    = `${cfg.fontSize}px ${cfg.fontFamily}`;
-        this._ringFronts = new Float32Array(cfg.burstNumRings);
+        this._ringFronts = null; // unused, kept for compat
 
         // Pre-build green color LUT: index 0–255 → 'rgb(0,g,0)' string
         // Avoids template string allocation for every trail entry every frame
@@ -219,9 +233,12 @@ class DigitalRain {
             (cfg.burstDurationMin + Math.random() * (cfg.burstDurationMax - cfg.burstDurationMin)) * 60
         );
         this._burstFramesLeft  = this._burstTotalFrames;
-        this._burstEpicenter   = Math.max(0, Math.min(this._cols.length - 1, col));
+        this._burstEpicenter    = Math.max(0, Math.min(this._cols.length - 1, col));
         this._burstEpicenterRow = Math.max(0, row);
-        this._burstRadius      = 3;
+        this._burstAngle        = (Math.random() < 0.5 ? 1 : -1) *
+            (cfg.burstAngle * (0.5 + Math.random()));
+        this._burstRadius = 3;
+        this._burstNoise  = this._makeBurstNoise(this._burstEpicenter);
     }
 
     // ── Mount / unmount ───────────────────────────────────────────────────
@@ -248,9 +265,9 @@ class DigitalRain {
 
         // Boot: single medium-speed stream in the center column
         this._booting = true;
-        const medSkip = Math.max(1, (this._cfg.speedTiers[1]
-            ? this._cfg.speedTiers[1].frameSkip
-            : 6) * this._speedMult);
+        const medSkip = Math.max(1, (this._cfg.speedTiers[0]
+            ? this._cfg.speedTiers[0].frameSkip
+            : 2) * this._speedMult);
         this._bootStream = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
 
         this._initColumns();
@@ -281,6 +298,7 @@ class DigitalRain {
         this._cols = []; this._frameCount = 0;
         this._burstActive = false; this._burstTotalFrames = 0;
         this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
+        this._burstAngle = 0; this._burstNoise = null;
         this._booting = true; this._bootStream = null;
     }
 
@@ -322,7 +340,7 @@ class DigitalRain {
         // ── Boot phase: single center stream ──────────────────────────────
         if (this._booting && this._bootStream) {
             const bs      = this._bootStream;
-            const halfRow = maxRow >> 1;
+            const halfRow = maxRow >> 2; // quarter of the way down
             const centerX = Math.floor(numCols / 2) * fw;
 
             if (fc % bs.speed === 0) {
@@ -382,72 +400,57 @@ class DigitalRain {
         const fastThresh = this._fastThresh;
         const minGap     = cfg.dualMinGap;
 
-        // ── Burst ──────────────────────────────────────────────────────────
+        // ── Burst (lightning) ─────────────────────────────────────────────
         if (cfg.burst && !this._burstActive && fc >= this._nextBurstFrame) {
             this.triggerBurst();
         }
         if (this._burstActive) {
-            this._burstRadius = (this._burstTotalFrames - this._burstFramesLeft) * cfg.burstExpansionRate;
             if (--this._burstFramesLeft <= 0) {
                 this._burstActive = false; this._burstTotalFrames = 0;
-                this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
+                this._burstEpicenter = -1; this._burstEpicenterRow = -1;
+                this._burstRadius = 0; this._burstAngle = 0; this._burstNoise = null;
                 this._nextBurstFrame = fc + Math.round(
                     (cfg.burstIntervalMin + Math.random() * (cfg.burstIntervalMax - cfg.burstIntervalMin)) * 60
                 );
             }
         }
 
-        // Pre-compute burst ring fronts once per frame
+        // Pre-compute lightning params once per frame
         const burstActive       = this._burstActive;
         const burstEpicenter    = this._burstEpicenter;
         const burstEpicenterRow = this._burstEpicenterRow;
-        const numRings       = cfg.burstNumRings;
-        const bellWidth3     = cfg.burstBellWidth * 3;
-        const dissipate      = cfg.burstDissipate;
-        const amplify        = cfg.burstAmplify;
-        const epicBoost      = cfg.burstEpicenterBoost;
-        let decay = 0;
-
-        if (burstActive) {
-            const elapsed = this._burstTotalFrames - this._burstFramesLeft;
-            decay = Math.max(0, 1 - (elapsed / this._burstTotalFrames) * 1.2);
-            const rf = this._ringFronts;
-            const rg = cfg.burstRingGap;
-            const br = this._burstRadius;
-            for (let r = 0; r < numRings; r++) rf[r] = br - r * rg;
-        }
+        const burstAngle        = this._burstAngle;
+        const burstReach        = cfg.burstReach;
+        const burstWidth        = cfg.burstWidth;
+        // Decay: fast flash then quick fade — peaks at 0, gone by end
+        const elapsed        = burstActive ? this._burstTotalFrames - this._burstFramesLeft : 0;
+        const progress       = burstActive ? elapsed / this._burstTotalFrames : 0;
+        const lightningDecay = 1;
+        const decay          = lightningDecay;
 
         ctx.font = this._fontStr; // set once per frame
         const greenLUT = this._greenLUT;
-        const glowLUT  = `rgba(0,255,0,${cfg.glowAlpha})`; // cached no-burst glow
+        const glowLUT  = `rgba(0,255,0,${cfg.glowAlpha})`;
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
             const x   = i * fw;
 
-            // ── Ripple intensity ───────────────────────────────────────────
-            let bIntens = 0;
+            // ── Lightning intensity (column-level, no per-entry row calc yet) ──
+            let colBIntens = 0;
             if (burstActive && burstEpicenter >= 0) {
-                const rf   = this._ringFronts;
-                const dist = i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i;
-                for (let r = 0; r < numRings; r++) {
-                    const rr = rf[r];
-                    if (rr < 0) continue;
-                    const passed = rr - dist;
-                    if (passed >= 0 && passed < bellWidth3) {
-                        const bell = Math.exp(-(passed * passed) / bellDenom);
-                        const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
-                        if (bell * str > bIntens) bIntens = bell * str;
-                    }
+                const colDelta = i - burstEpicenter;
+                const absDelta = colDelta < 0 ? -colDelta : colDelta;
+                // Only light up columns within reach
+                if (absDelta <= burstReach) {
+                    // Falloff along the bolt: strong near epicenter, fades at reach
+                    const reach_t = 1 - absDelta / burstReach;
+                    colBIntens = reach_t * reach_t * decay;
                 }
-                const cb = Math.exp(-(dist * dist) / sigDenom) * decay * epicBoost;
-                bIntens += cb;
-                if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
-                if (bIntens > 1) bIntens = 1;
             }
 
-            const rb        = bIntens * 230 | 0;
-            const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
+            const rb        = colBIntens * 230 | 0;
+            const glowAlpha = cfg.glowAlpha + colBIntens * 0.5;
 
             // ── Try to spawn second stream ─────────────────────────────────
             if (cfg.dualFrequency > 0 && col.streams.length === 1 && col.streams[0].active
@@ -533,9 +536,17 @@ class DigitalRain {
                 if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
             }
 
-            const colDist = burstActive && burstEpicenter >= 0
-                ? (i > burstEpicenter ? i - burstEpicenter : burstEpicenter - i)
-                : 0;
+            const colDelta = burstActive && burstEpicenter >= 0 ? i - burstEpicenter : 0;
+            let colBIntens = 0;
+            if (burstActive && burstEpicenter >= 0 && this._burstNoise) {
+                const absDelta   = colDelta < 0 ? -colDelta : colDelta;
+                const noiseThresh = this._burstNoise[i] ?? 1;
+                // Column is alive only if progress hasn't reached its dropout threshold
+                if (absDelta <= burstReach && progress < noiseThresh) {
+                    const reach_t = 1 - absDelta / burstReach;
+                    colBIntens = reach_t * reach_t;
+                }
+            }
 
             for (let s = 0; s < col.streams.length; s++) {
                 const st      = col.streams[s];
@@ -546,30 +557,23 @@ class DigitalRain {
                     const e  = trails[t];
                     const cy = e.row * fw;
 
-                    // Per-entry 2D bIntens
+                    // Per-entry lightning intensity — how close this row is to the bolt path
                     let bIntens = 0;
-                    if (burstActive && burstEpicenter >= 0) {
-                        const rf      = this._ringFronts;
-                        const rowDist = e.row > burstEpicenterRow
-                            ? e.row - burstEpicenterRow : burstEpicenterRow - e.row;
-                        const dist2d  = Math.sqrt(colDist * colDist + rowDist * rowDist);
-                        for (let r = 0; r < numRings; r++) {
-                            const rr = rf[r];
-                            if (rr < 0) continue;
-                            const passed = rr - dist2d;
-                            if (passed >= 0 && passed < bellWidth3) {
-                                const bell = Math.exp(-(passed * passed) / bellDenom);
-                                const str  = (1 - r * 0.2) * Math.max(0, 1 - rr * dissipate);
-                                if (bell * str > bIntens) bIntens = bell * str;
-                            }
+                    if (colBIntens > 0) {
+                        // Bolt row at this column: epicenter row + angle drift
+                        const boltRow = burstEpicenterRow + burstAngle * colDelta;
+                        const rowDist = e.row - boltRow;
+                        const absDist = rowDist < 0 ? -rowDist : rowDist;
+                        if (absDist < burstWidth * 4) {
+                            // Gaussian falloff around bolt path
+                            const bw2 = burstWidth * burstWidth;
+                            const rowFalloff = Math.exp(-(rowDist * rowDist) / (2 * bw2));
+                            bIntens = colBIntens * rowFalloff;
                         }
-                        const cb = Math.exp(-(dist2d * dist2d) / sigDenom) * decay * epicBoost;
-                        bIntens += cb;
-                        if (bIntens > 1 / amplify) bIntens = bIntens * amplify;
-                        if (bIntens > 1) bIntens = 1;
                     }
 
-                    const rb        = bIntens * 230 | 0;
+                    const rb        = bIntens * 255 | 0;
+                    const whiten    = bIntens * bIntens; // quadratic push to white at peak
                     const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
                     ctx.fillStyle = bgColor;
@@ -583,7 +587,9 @@ class DigitalRain {
                             ctx.fillText(e.char, x + 1, cy + fw - 2);
                             ctx.fillText(e.char, x,     cy + fw - 3);
                             ctx.fillText(e.char, x,     cy + fw - 1);
-                            ctx.fillStyle = `rgb(${rb},255,${rb})`;
+                            // Head: near-white at peak intensity
+                            const hw = 255 * whiten | 0;
+                            ctx.fillStyle = `rgb(${hw},255,${hw})`;
                         } else {
                             ctx.fillStyle = glowLUT;
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
@@ -599,8 +605,11 @@ class DigitalRain {
                         if (bIntens > 0) {
                             const base_g = cl * cl * 255 | 0;
                             const g      = base_g + (bIntens * 220 | 0);
-                            const trb    = bIntens * cl * 230 | 0;
-                            ctx.fillStyle = `rgb(${trb},${g > 255 ? 255 : g},${trb})`;
+                            // Push toward white: all channels rise with whiten
+                            const boost  = whiten * 255 | 0;
+                            const trb    = ((bIntens * cl * 230 | 0) + boost) > 255 ? 255 : (bIntens * cl * 230 | 0) + boost;
+                            const tg     = (g + boost) > 255 ? 255 : g + boost;
+                            ctx.fillStyle = `rgb(${trb},${tg},${trb})`;
                         } else {
                             ctx.fillStyle = greenLUT[cl * cl * 255 | 0];
                         }
