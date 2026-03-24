@@ -142,8 +142,8 @@ class DigitalRain {
             trailLengthSlow: 70,
 
             burst:              true,
-            burstDurationMin:   6,
-            burstDurationMax:   12,
+            burstDurationMin:   10,
+            burstDurationMax:   18,
             burstIntervalMin:   30,
             burstIntervalMax:   60,
             burstFirstMin:      20,
