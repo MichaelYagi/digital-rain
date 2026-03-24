@@ -140,6 +140,7 @@
         <button class="action" onclick="rain.start()">▶ Start</button>
         <button class="action" onclick="rain.stop()">■ Stop</button>
         <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
+        <button class="action" id="tapToggle" onclick="toggleTap()">👆 Tap: On</button>
     </div>
 
     <div class="sep"></div>
@@ -149,11 +150,11 @@
         <label>SPEED</label>
         <div class="sl-row">
             <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
-            <input type="range" id="rSpeed" min="0" max="100" value="99"
+            <input type="range" id="rSpeed" min="0" max="100" value="95"
                    oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
             <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
         </div>
-        <span class="val" id="vSpeed">99</span>
+        <span class="val" id="vSpeed">95</span>
     </div>
 
     <!-- Dual frequency -->
@@ -270,7 +271,7 @@
 <script src="digital-rain.js"></script>
 <script>
     const rain = new DigitalRain('#rain', {
-        dropSpeed:       99,
+        dropSpeed:       95,
         speedTiers: [
             { frameSkip: 2,  weight: 50 },
             { frameSkip: 4,  weight: 42 },
@@ -281,7 +282,7 @@
         dualMinGap:      10,
         trailLengthFast: 28,
         trailLengthSlow: 70,
-        burst:           true,
+        tapToBurst:      true,
         burstDurationMin:3,
         burstDurationMax:7,
         burstIntervalMin:30,
@@ -296,6 +297,23 @@
         const on  = !rain._cfg.burst;
         rain.configure({ burst: on });
         document.getElementById('burstToggle').textContent = `⚡ Burst: ${on ? 'On' : 'Off'}`;
+    }
+
+    function toggleTap() {
+        const on = !rain._cfg.tapToBurst;
+        rain.configure({ tapToBurst: on });
+        // Re-mount listeners by stopping and restarting isn't ideal —
+        // instead directly wire/unwire the canvas listener
+        if (on) {
+            rain._canvas.style.pointerEvents = 'auto';
+            rain._canvas.addEventListener('click',      rain._boundTap);
+            rain._canvas.addEventListener('touchstart', rain._boundTap, { passive: true });
+        } else {
+            rain._canvas.style.pointerEvents = 'none';
+            rain._canvas.removeEventListener('click',      rain._boundTap);
+            rain._canvas.removeEventListener('touchstart', rain._boundTap);
+        }
+        document.getElementById('tapToggle').textContent = `👆 Tap: ${on ? 'On' : 'Off'}`;
     }
 
     function step(sliderId, delta, valId, min, max, callback) {
