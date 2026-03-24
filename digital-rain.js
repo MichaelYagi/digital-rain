@@ -31,6 +31,7 @@ class DigitalRain {
         this._burstRadius      = 0;
         this._burstAngle       = 0;
         this._burstNoise       = null;
+        this._burstJag         = null; // per-column row jitter for jagged bolt path
 
         // Cached derived values — computed once in _mount
         this._speedMult    = 1;
@@ -80,6 +81,7 @@ class DigitalRain {
             (cfg.burstAngle * (0.5 + Math.random()));
         this._burstRadius = 3; // kept for API compat
         this._burstNoise  = this._makeBurstNoise(this._burstEpicenter);
+        this._burstJag    = this._makeBurstJag();
     }
 
     _makeBurstNoise(epi) {
@@ -94,6 +96,22 @@ class DigitalRain {
             ));
         }
         return noise;
+    }
+
+    _makeBurstJag() {
+        // Per-column row displacement for a jagged bolt path.
+        // Uses a random walk so adjacent columns are correlated (looks like real lightning).
+        const n   = this._cols.length;
+        const jag = new Float32Array(n);
+        const w   = this._cfg.burstWidth || 6;
+        let walk  = 0;
+        for (let i = 0; i < n; i++) {
+            // Random walk with mean reversion — keeps bolt from drifting too far
+            walk += (Math.random() - 0.5) * w * 0.8;
+            walk *= 0.85; // mean reversion
+            jag[i] = walk;
+        }
+        return jag;
     }
 
     configure(o) {
@@ -124,7 +142,7 @@ class DigitalRain {
             chars:           'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
 
             // 0=frozen, 1=barely moving, 50=default, 100=fastest
-            dropSpeed:       99,
+            dropSpeed:       98,
 
             // Speed tiers: frameSkip (lower=faster), weight (relative probability)
             speedTiers: [
@@ -149,9 +167,9 @@ class DigitalRain {
             burstFirstMin:      20,
             burstFirstMax:      40,
             burstExpansionRate: 0.45,   // unused legacy — kept for API compat
-            burstWidth:         6,       // row half-width of the bolt (falloff in rows)
-            burstReach:         80,      // how many columns the bolt extends left/right
-            burstAngle:         0.18,    // row drift per column (steepness of the bolt)
+            burstWidth:         10,      // row half-width of the bolt (falloff in rows)
+            burstReach:         140,     // how many columns the bolt extends left/right
+            burstAngle:         0.25,    // row drift per column (steepness of the bolt)
 
             // Click/tap on canvas to trigger burst at that position
             tapToBurst:     false,
@@ -239,6 +257,7 @@ class DigitalRain {
             (cfg.burstAngle * (0.5 + Math.random()));
         this._burstRadius = 3;
         this._burstNoise  = this._makeBurstNoise(this._burstEpicenter);
+        this._burstJag    = this._makeBurstJag();
     }
 
     // ── Mount / unmount ───────────────────────────────────────────────────
@@ -267,7 +286,7 @@ class DigitalRain {
         this._booting = true;
         const medSkip = Math.max(1, (this._cfg.speedTiers[1]
             ? this._cfg.speedTiers[1].frameSkip
-            : 2) * this._speedMult);
+            : 6) * this._speedMult);
         this._bootStream = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
 
         this._initColumns();
@@ -298,7 +317,7 @@ class DigitalRain {
         this._cols = []; this._frameCount = 0;
         this._burstActive = false; this._burstTotalFrames = 0;
         this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
-        this._burstAngle = 0; this._burstNoise = null;
+        this._burstAngle = 0; this._burstNoise = null; this._burstJag = null;
         this._booting = true; this._bootStream = null;
     }
 
@@ -408,7 +427,7 @@ class DigitalRain {
             if (--this._burstFramesLeft <= 0) {
                 this._burstActive = false; this._burstTotalFrames = 0;
                 this._burstEpicenter = -1; this._burstEpicenterRow = -1;
-                this._burstRadius = 0; this._burstAngle = 0; this._burstNoise = null;
+                this._burstRadius = 0; this._burstAngle = 0; this._burstNoise = null; this._burstJag = null;
                 this._nextBurstFrame = fc + Math.round(
                     (cfg.burstIntervalMin + Math.random() * (cfg.burstIntervalMax - cfg.burstIntervalMin)) * 60
                 );
@@ -557,11 +576,12 @@ class DigitalRain {
                     const e  = trails[t];
                     const cy = e.row * fw;
 
-                    // Per-entry lightning intensity — how close this row is to the bolt path
+                    // Per-entry lightning intensity — row falloff around jagged bolt path
                     let bIntens = 0;
                     if (colBIntens > 0) {
-                        // Bolt row at this column: epicenter row + angle drift
-                        const boltRow = burstEpicenterRow + burstAngle * colDelta;
+                        const jag     = this._burstJag;
+                        const jagOff  = jag ? jag[i] : 0;
+                        const boltRow = burstEpicenterRow + burstAngle * colDelta + jagOff;
                         const rowDist = e.row - boltRow;
                         const absDist = rowDist < 0 ? -rowDist : rowDist;
                         if (absDist < burstWidth * 4) {
