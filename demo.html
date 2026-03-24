@@ -149,11 +149,11 @@
         <label>SPEED</label>
         <div class="sl-row">
             <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
-            <input type="range" id="rSpeed" min="0" max="100" value="95"
+            <input type="range" id="rSpeed" min="0" max="100" value="99"
                    oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
             <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
         </div>
-        <span class="val" id="vSpeed">95</span>
+        <span class="val" id="vSpeed">99</span>
     </div>
 
     <!-- Dual frequency -->
@@ -270,7 +270,7 @@
 <script src="digital-rain.js"></script>
 <script>
     const rain = new DigitalRain('#rain', {
-        dropSpeed:       95,
+        dropSpeed:       99,
         speedTiers: [
             { frameSkip: 2,  weight: 50 },
             { frameSkip: 4,  weight: 42 },
