@@ -245,13 +245,18 @@ class DigitalRain {
         this._ctx = this._canvas.getContext('2d');
 
         this._computeCached();
+
+        // Boot: single medium-speed stream in the center column
+        this._booting = true;
+        const medSkip = Math.max(1, (this._cfg.speedTiers[1]
+            ? this._cfg.speedTiers[1].frameSkip
+            : 6) * this._speedMult);
+        this._bootStream = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
+
         this._initColumns();
 
-        if (cfg.burst) {
-            this._nextBurstFrame = Math.round(
-                (cfg.burstFirstMin + Math.random() * (cfg.burstFirstMax - cfg.burstFirstMin)) * 60
-            );
-        }
+        // Burst fires after boot completes
+        this._nextBurstFrame = 999999;
 
         this._boundDraw = this._drawFrame.bind(this);
         this._boundTap  = this._handleTap.bind(this);
@@ -282,9 +287,8 @@ class DigitalRain {
     _initColumns() {
         const n = Math.floor(this._canvas.width / this._cfg.fontSize);
         this._cols = Array.from({ length: n }, () => ({
-            streams:  [ this._makeStream(60) ],
+            streams:  [ this._makeStream(this._booting ? 999999 : 60) ],
             spawnCD:  this._dualCooldown(),
-            // Two plain objects swapped each frame as rowMap/prevRows — no allocation
             mapA:     Object.create(null),
             mapB:     Object.create(null),
             useA:     true,
@@ -306,18 +310,77 @@ class DigitalRain {
         if (!this._ctx || !this._canvas) return;
         this._frameCount++;
 
-        const cfg        = this._cfg;
-        const ctx        = this._ctx;
-        const CHARS      = this._CHARS;
-        const maxRow     = Math.floor(this._canvas.height / cfg.fontSize);
-        const numCols    = this._cols.length;
-        const fw         = cfg.fontSize;
-        const bgColor    = cfg.bgColor;
+        const cfg     = this._cfg;
+        const ctx     = this._ctx;
+        const CHARS   = this._CHARS;
+        const maxRow  = Math.floor(this._canvas.height / cfg.fontSize);
+        const numCols = this._cols.length;
+        const fw      = cfg.fontSize;
+        const bgColor = cfg.bgColor;
+        const fc      = this._frameCount;
+
+        // ── Boot phase: single center stream ──────────────────────────────
+        if (this._booting && this._bootStream) {
+            const bs      = this._bootStream;
+            const halfRow = maxRow >> 1;
+            const centerX = Math.floor(numCols / 2) * fw;
+
+            if (fc % bs.speed === 0) {
+                const char = CHARS[Math.random() * CHARS.length | 0];
+                for (let t = 0; t < bs.trails.length; t++) bs.trails[t].brightness--;
+                for (let t = bs.trails.length - 1; t >= 0; t--) {
+                    if (bs.trails[t].brightness <= 0) { bs.trails[t] = bs.trails[bs.trails.length-1]; bs.trails.pop(); }
+                }
+                bs.trails.push({ row: bs.row, char, brightness: bs.steps + 6 });
+                bs.row++;
+            }
+
+            ctx.font = this._fontStr;
+            for (let t = 0; t < bs.trails.length; t++) {
+                const e  = bs.trails[t];
+                const cy = e.row * fw;
+                ctx.fillStyle = bgColor;
+                ctx.fillRect(centerX, cy, fw, fw);
+                const isHead = (t === bs.trails.length - 1);
+                if (isHead) {
+                    ctx.fillStyle = `rgba(0,255,65,${cfg.glowAlpha})`;
+                    ctx.fillText(e.char, centerX - 1, cy + fw - 2);
+                    ctx.fillText(e.char, centerX + 1, cy + fw - 2);
+                    ctx.fillText(e.char, centerX,     cy + fw - 3);
+                    ctx.fillText(e.char, centerX,     cy + fw - 1);
+                    ctx.fillStyle = '#00ff41';
+                } else {
+                    const cl = Math.min(1, e.brightness / bs.steps);
+                    ctx.fillStyle = this._greenLUT[cl * cl * 255 | 0];
+                }
+                ctx.fillText(e.char, centerX, cy + fw - 2);
+            }
+
+            if (bs.row >= halfRow) {
+                this._booting = false;
+                const centerCol = Math.floor(numCols / 2);
+                this._initColumns();
+                const liveStream = {
+                    row: bs.row, speed: bs.speed, steps: bs.steps,
+                    delay: 0, trails: bs.trails.slice(), active: true, suppressTicks: 0,
+                };
+                this._cols[centerCol].streams[0] = liveStream;
+                this._bootStream = null;
+                if (cfg.burst) {
+                    this._nextBurstFrame = fc + Math.round(
+                        (cfg.burstFirstMin + Math.random() * (cfg.burstFirstMax - cfg.burstFirstMin)) * 60
+                    );
+                }
+            }
+
+            this._rafId = requestAnimationFrame(this._boundDraw);
+            return;
+        }
+
         const bellDenom  = this._bellDenom;
         const sigDenom   = this._sigDenom;
         const fastThresh = this._fastThresh;
         const minGap     = cfg.dualMinGap;
-        const fc         = this._frameCount;
 
         // ── Burst ──────────────────────────────────────────────────────────
         if (cfg.burst && !this._burstActive && fc >= this._nextBurstFrame) {
