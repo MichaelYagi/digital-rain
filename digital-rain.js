@@ -265,8 +265,8 @@ class DigitalRain {
 
         // Boot: single medium-speed stream in the center column
         this._booting = true;
-        const medSkip = Math.max(1, (this._cfg.speedTiers[0]
-            ? this._cfg.speedTiers[0].frameSkip
+        const medSkip = Math.max(1, (this._cfg.speedTiers[1]
+            ? this._cfg.speedTiers[1].frameSkip
             : 2) * this._speedMult);
         this._bootStream = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
 
@@ -340,7 +340,7 @@ class DigitalRain {
         // ── Boot phase: single center stream ──────────────────────────────
         if (this._booting && this._bootStream) {
             const bs      = this._bootStream;
-            const halfRow = maxRow >> 2; // quarter of the way down
+            const halfRow = maxRow >> 1;
             const centerX = Math.floor(numCols / 2) * fw;
 
             if (fc % bs.speed === 0) {
