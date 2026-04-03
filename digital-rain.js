@@ -173,6 +173,12 @@ class DigitalRain {
 
             // Click/tap on canvas to trigger burst at that position
             tapToBurst:     false,
+
+            // Intro pioneer drop: 0=no intro (all drops start at once),
+            // 50=pioneer drops to halfway, 100=pioneer drops to bottom
+            introDepth:     50,
+            // Speed of the pioneer drop on the same 0–100 scale as dropSpeed
+            introSpeed:     98,
         };
     }
 
@@ -185,6 +191,10 @@ class DigitalRain {
         this._fastThresh = cfg.speedTiers[0].frameSkip * this._speedMult * 1.5;
         this._fontStr    = `${cfg.fontSize}px ${cfg.fontFamily}`;
         this._ringFronts = null; // unused, kept for compat
+
+        // Intro speed multiplier — independent of global dropSpeed
+        const si = cfg.introSpeed;
+        this._introSpeedMult = si <= 0 ? 999 : si >= 100 ? 1 : Math.round(1 + (99 - si) / 99 * 59);
 
         // Pre-build green color LUT: index 0–255 → 'rgb(0,g,0)' string
         // Avoids template string allocation for every trail entry every frame
@@ -217,14 +227,14 @@ class DigitalRain {
     _makeStream(delayMax) {
         const speed = this._makeFrameSkip();
         return { row: 0, speed, steps: this._makeSteps(speed),
-                 delay: Math.random() * (delayMax ?? 60) | 0,
-                 trails: [], active: true, suppressTicks: 0 };
+            delay: Math.random() * (delayMax ?? 60) | 0,
+            trails: [], active: true, suppressTicks: 0 };
     }
 
     _makeSecondStream(primarySpeed, delayMax) {
         return { row: 0, speed: primarySpeed, steps: this._makeSteps(primarySpeed),
-                 delay: Math.random() * (delayMax ?? 30) | 0,
-                 trails: [], active: true, suppressTicks: 0 };
+            delay: Math.random() * (delayMax ?? 30) | 0,
+            trails: [], active: true, suppressTicks: 0 };
     }
 
     _dualCooldown() {
@@ -282,14 +292,28 @@ class DigitalRain {
 
         this._computeCached();
 
-        // Boot: single medium-speed stream in the center column
-        this._booting = true;
-        const medSkip = Math.max(1, (this._cfg.speedTiers[1]
-            ? this._cfg.speedTiers[1].frameSkip
-            : 6) * this._speedMult);
-        this._bootStream = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
-
-        this._initColumns();
+        const introDepth = this._cfg.introDepth;
+        if (introDepth <= 0) {
+            // No intro — all columns start immediately
+            this._booting     = false;
+            this._bootStream  = null;
+            this._bootTargetRow = 0;
+            this._initColumns();
+        } else {
+            // Boot: single stream in the center column.
+            // Speed driven by introSpeed, not global dropSpeed.
+            // Uses speedTiers[0] (fastest tier) as the base — same anchor as the main rain —
+            // so introSpeed=100 feels equivalent to dropSpeed=100.
+            this._booting = true;
+            const medSkip = Math.max(1, (this._cfg.speedTiers[0]
+                ? this._cfg.speedTiers[0].frameSkip
+                : 2) * this._introSpeedMult);
+            this._bootStream    = { row: 0, speed: medSkip, steps: this._makeSteps(medSkip), trails: [] };
+            // Target row: introDepth 1–100 maps to 1%–100% of screen height
+            const maxRow        = Math.floor(this._canvas.height / this._cfg.fontSize);
+            this._bootTargetRow = Math.max(1, Math.round((introDepth / 100) * maxRow));
+            this._initColumns();
+        }
 
         // Burst fires after boot completes
         this._nextBurstFrame = 999999;
@@ -318,7 +342,7 @@ class DigitalRain {
         this._burstActive = false; this._burstTotalFrames = 0;
         this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
         this._burstAngle = 0; this._burstNoise = null; this._burstJag = null;
-        this._booting = true; this._bootStream = null;
+        this._booting = true; this._bootStream = null; this._bootTargetRow = 0;
     }
 
     _initColumns() {
@@ -359,7 +383,6 @@ class DigitalRain {
         // ── Boot phase: single center stream ──────────────────────────────
         if (this._booting && this._bootStream) {
             const bs      = this._bootStream;
-            const halfRow = maxRow >> 1;
             const centerX = Math.floor(numCols / 2) * fw;
 
             if (fc % bs.speed === 0) {
@@ -393,7 +416,7 @@ class DigitalRain {
                 ctx.fillText(e.char, centerX, cy + fw - 2);
             }
 
-            if (bs.row >= halfRow) {
+            if (bs.row >= this._bootTargetRow) {
                 this._booting = false;
                 const centerCol = Math.floor(numCols / 2);
                 this._initColumns();

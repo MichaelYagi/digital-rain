@@ -77,6 +77,12 @@ new DigitalRain('#container', {
     // ── Tap to burst ──────────────────────────────────────────────────────
     tapToBurst:       false,  // click/tap canvas to trigger burst at that position
 
+    // ── Intro sequence ────────────────────────────────────────────────────
+    introDepth:       50,     // 0=no intro (all drops start at once),
+                              // 50=pioneer drops to halfway, 100=pioneer drops to bottom
+    introSpeed:       50,     // speed of the pioneer drop: 0=frozen, 100=fastest
+                              // independent of dropSpeed
+
 })
 ```
 
@@ -145,13 +151,40 @@ rain.stop();
 setTimeout(() => rain.start(), 3000);
 ```
 
+### Dramatic slow intro, then fast rain
+```js
+new DigitalRain('#container', {
+    introDepth: 100,   // pioneer drops all the way to the bottom
+    introSpeed: 20,    // crawls down slowly
+    dropSpeed:  98,    // main rain is fast
+}).start();
+```
+
+### No intro — all drops start at once
+```js
+new DigitalRain('#container', {
+    introDepth: 0,
+}).start();
+```
+
 ---
 
-## Boot sequence
+## Intro sequence
 
-On start, a single medium-speed stream drops down the center column.
-When it reaches halfway, the full rain kicks in from the top.
-The boot stream continues naturally as part of the full rain.
+On start, a single pioneer stream drops down the center column. Once it reaches its
+target depth, the full rain kicks in from the top. The pioneer stream continues
+naturally as part of the full rain.
+
+`introDepth` controls how far the pioneer drop falls before the rest begin:
+- `0` — no intro; all columns start immediately
+- `50` — pioneer drops to the vertical midpoint (default)
+- `100` — pioneer drops all the way to the bottom
+
+`introSpeed` controls the pioneer drop's speed on the same 0–100 scale as `dropSpeed`,
+but independently — so you can make it crawl in dramatically while the main rain runs fast.
+
+Both options can be passed at construction or updated via `configure()`. Since the intro
+is a one-shot on `start()`, call `stop()` then `start()` to replay it with new values.
 
 ---
 

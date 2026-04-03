@@ -125,6 +125,10 @@
             letter-spacing: 0.06em;
             transition: background 0.12s;
             white-space: nowrap;
+            line-height: 1.4;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
         }
         button.action:hover { background: rgba(0,255,65,0.18); border-color: #00ff41; }
     </style>
@@ -138,6 +142,7 @@
     <!-- Playback -->
     <div class="ctrl-group">
         <button class="action" onclick="rain.start()">▶ Start</button>
+        <button class="action" onclick="restartRain()">🔄 Restart</button>
         <button class="action" onclick="rain.stop()">■ Stop</button>
         <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
         <button class="action" id="tapToggle" onclick="toggleTap()">👆 Tap: On</button>
@@ -145,28 +150,47 @@
 
     <div class="sep"></div>
 
-    <!-- Drop speed -->
-    <div class="ctrl-group">
-        <label>SPEED</label>
+    <!-- Drop speed + Dual frequency -->
+    <div class="ctrl-col">
         <div class="sl-row">
+            <label style="width:4rem">SPEED</label>
             <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
             <input type="range" id="rSpeed" min="0" max="100" value="98"
                    oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
             <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
+            <span class="val" id="vSpeed">98</span>
         </div>
-        <span class="val" id="vSpeed">98</span>
-    </div>
-
-    <!-- Dual frequency -->
-    <div class="ctrl-group">
-        <label>DUAL FREQ</label>
         <div class="sl-row">
+            <label style="width:4rem">DUAL FREQ</label>
             <button class="arr" onclick="step('rDual',-1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">◀</button>
             <input type="range" id="rDual" min="0" max="100" value="50"
                    oninput="setVal('vDual',this.value); rain.configure({dualFrequency:+this.value})">
             <button class="arr" onclick="step('rDual',+1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">▶</button>
+            <span class="val" id="vDual">50</span>
         </div>
-        <span class="val" id="vDual">50</span>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Intro -->
+    <div class="ctrl-col">
+        <label>INTRO</label>
+        <div class="sl-row">
+            <span class="tier-label">depth</span>
+            <button class="arr" onclick="step('rIDepth',-1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">◀</button>
+            <input type="range" id="rIDepth" min="0" max="100" value="50"
+                   oninput="setVal('vIDepth',this.value); rain.configure({introDepth:+this.value})">
+            <button class="arr" onclick="step('rIDepth',+1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">▶</button>
+            <span class="val" id="vIDepth">50</span>
+        </div>
+        <div class="sl-row">
+            <span class="tier-label">speed</span>
+            <button class="arr" onclick="step('rISpeed',-1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">◀</button>
+            <input type="range" id="rISpeed" min="0" max="100" value="98"
+                   oninput="setVal('vISpeed',this.value); rain.configure({introSpeed:+this.value})">
+            <button class="arr" onclick="step('rISpeed',+1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">▶</button>
+            <span class="val" id="vISpeed">98</span>
+        </div>
     </div>
 
     <div class="sep"></div>
@@ -287,9 +311,16 @@
         burstDurationMax:7,
         burstIntervalMin:30,
         burstIntervalMax:60,
+        introDepth:      50,
+        introSpeed:      98,
     });
 
     rain.start();
+
+    function restartRain() {
+        rain.stop();
+        rain.start();
+    }
 
     function setVal(id, v) { document.getElementById(id).textContent = v; }
 
@@ -326,11 +357,11 @@
 
     function updateTiers() {
         rain.configure({ speedTiers: [
-            { frameSkip: 2,  weight: +document.getElementById('rT0').value },
-            { frameSkip: 4,  weight: +document.getElementById('rT1').value },
-            { frameSkip: 10, weight: +document.getElementById('rT2').value },
-            { frameSkip: 13, weight: +document.getElementById('rT3').value },
-        ]});
+                { frameSkip: 2,  weight: +document.getElementById('rT0').value },
+                { frameSkip: 4,  weight: +document.getElementById('rT1').value },
+                { frameSkip: 10, weight: +document.getElementById('rT2').value },
+                { frameSkip: 13, weight: +document.getElementById('rT3').value },
+            ]});
     }
 </script>
 </body>
