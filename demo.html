@@ -146,6 +146,7 @@
         <button class="action" onclick="rain.stop()">■ Stop</button>
         <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
         <button class="action" id="tapToggle" onclick="toggleTap()">👆 Tap: On</button>
+        <button class="action" onclick="randomizeAll()">Randomize</button>
     </div>
 
     <div class="sep"></div>
@@ -316,6 +317,68 @@
     });
 
     rain.start();
+
+    function randomizeAll() {
+        function rInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+        function setSlider(id, valId, val) {
+            const el = document.getElementById(id);
+            el.value = val;
+            setVal(valId, val);
+        }
+
+        const dropSpeed = rInt(20, 100);
+        setSlider('rSpeed', 'vSpeed', dropSpeed);
+        rain.configure({ dropSpeed });
+
+        const dualFreq = rInt(0, 100);
+        setSlider('rDual', 'vDual', dualFreq);
+        rain.configure({ dualFrequency: dualFreq });
+
+        const introDepth = rInt(0, 100);
+        setSlider('rIDepth', 'vIDepth', introDepth);
+        rain.configure({ introDepth });
+
+        const introSpeed = rInt(20, 100);
+        setSlider('rISpeed', 'vISpeed', introSpeed);
+        rain.configure({ introSpeed });
+
+        const trailFast = rInt(5, 100);
+        setSlider('rTF', 'vTF', trailFast);
+        rain.configure({ trailLengthFast: trailFast });
+
+        const trailSlow = rInt(trailFast, 150);
+        setSlider('rTS', 'vTS', trailSlow);
+        rain.configure({ trailLengthSlow: trailSlow });
+
+        const t0 = rInt(0, 100), t1 = rInt(0, 100), t2 = rInt(0, 60), t3 = rInt(0, 60);
+        setSlider('rT0', 'vT0', t0);
+        setSlider('rT1', 'vT1', t1);
+        setSlider('rT2', 'vT2', t2);
+        setSlider('rT3', 'vT3', t3);
+        rain.configure({ speedTiers: [
+                { frameSkip: 2,  weight: t0 },
+                { frameSkip: 4,  weight: t1 },
+                { frameSkip: 10, weight: t2 },
+                { frameSkip: 13, weight: t3 },
+            ]});
+
+        const burstDurMin = rInt(1, 15);
+        const burstDurMax = rInt(burstDurMin, 20);
+        const burstIntMin = rInt(1, 120);
+        const burstIntMax = rInt(burstIntMin, 300);
+        setSlider('rBDMin', 'vBDMin', burstDurMin);
+        setSlider('rBDMax', 'vBDMax', burstDurMax);
+        setSlider('rBIMin', 'vBIMin', burstIntMin);
+        setSlider('rBIMax', 'vBIMax', burstIntMax);
+        rain.configure({
+            burstDurationMin: burstDurMin,
+            burstDurationMax: burstDurMax,
+            burstIntervalMin: burstIntMin,
+            burstIntervalMax: burstIntMax,
+        });
+
+        restartRain();
+    }
 
     function restartRain() {
         rain.stop();
