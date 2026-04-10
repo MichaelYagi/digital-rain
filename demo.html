@@ -163,6 +163,7 @@
         <button class="action" onclick="rain.stop()">■ Stop</button>
         <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
         <button class="action" id="tapToggle" onclick="toggleTap()">👆 Tap: On</button>
+        <button class="action" id="hideChildrenToggle" onclick="toggleHideChildren()">🙈 Hide Content: Off</button>
         <button class="action" onclick="randomizeAll()">Randomize</button>
     </div>
 
@@ -343,9 +344,9 @@
             setVal(valId, val);
         }
 
-        const dropSpeed = rInt(20, 100);
-        setSlider('rSpeed', 'vSpeed', dropSpeed);
-        rain.configure({ dropSpeed });
+        // const dropSpeed = rInt(20, 100);
+        // setSlider('rSpeed', 'vSpeed', dropSpeed);
+        // rain.configure({ dropSpeed });
 
         const dualFreq = rInt(0, 100);
         setSlider('rDual', 'vDual', dualFreq);
@@ -355,9 +356,9 @@
         setSlider('rIDepth', 'vIDepth', introDepth);
         rain.configure({ introDepth });
 
-        const introSpeed = rInt(20, 100);
-        setSlider('rISpeed', 'vISpeed', introSpeed);
-        rain.configure({ introSpeed });
+        // const introSpeed = rInt(20, 100);
+        // setSlider('rISpeed', 'vISpeed', introSpeed);
+        // rain.configure({ introSpeed });
 
         const trailFast = rInt(5, 100);
         setSlider('rTF', 'vTF', trailFast);
@@ -425,6 +426,14 @@
             rain._canvas.removeEventListener('touchstart', rain._boundTap);
         }
         document.getElementById('tapToggle').textContent = `👆 Tap: ${on ? 'On' : 'Off'}`;
+    }
+
+    function toggleHideChildren() {
+        const on = !rain._cfg.hideChildren;
+        rain.configure({ hideChildren: on });  // set BEFORE stop so _unmount sees new value
+        rain.stop();
+        rain.start();
+        document.getElementById('hideChildrenToggle').textContent = `🙈 Hide Content: ${on ? 'On' : 'Off'}`;
     }
 
     function step(sliderId, delta, valId, min, max, callback) {

@@ -41,6 +41,8 @@ class DigitalRain {
         this._fontStr      = '';
         this._ringFronts   = null; // reused Float32Array
 
+        this._childrenHidden = false;
+
         this._onResize = this._handleResize.bind(this);
     }
 
@@ -174,6 +176,9 @@ class DigitalRain {
             // Click/tap on canvas to trigger burst at that position
             tapToBurst:     false,
 
+            // Hide container's direct children on start, restore on stop
+            hideChildren:    false,
+
             // Intro pioneer drop: 0=no intro (all drops start at once),
             // 50=pioneer drops to halfway, 100=pioneer drops to bottom
             introDepth:     50,
@@ -276,6 +281,15 @@ class DigitalRain {
         const el = this._el, cfg = this._cfg;
         if (window.getComputedStyle(el).position === 'static') el.style.position = 'relative';
 
+        if (cfg.hideChildren) {
+            this._el.style.backgroundColor = cfg.bgColor;
+            for (const child of this._el.children) {
+                child.dataset._drainVis = child.style.visibility || '';
+                child.style.visibility = 'hidden';
+            }
+            this._childrenHidden = true;
+        }
+
         this._canvas = document.createElement('canvas');
         const rect   = el.getBoundingClientRect();
         this._canvas.width  = rect.width  || el.offsetWidth  || el.clientWidth  || window.innerWidth;
@@ -337,6 +351,14 @@ class DigitalRain {
                 this._canvas.removeEventListener('touchstart', this._boundTap);
             }
             this._canvas.remove(); this._canvas = null; this._ctx = null;
+        }
+        if (this._childrenHidden) {
+            this._el.style.backgroundColor = '';
+            for (const child of this._el.children) {
+                child.style.visibility = child.dataset._drainVis || '';
+                delete child.dataset._drainVis;
+            }
+            this._childrenHidden = false;
         }
         this._cols = []; this._frameCount = 0;
         this._burstActive = false; this._burstTotalFrames = 0;
