@@ -143,9 +143,32 @@
             gap: 0.3rem;
         }
         button.action:hover { background: rgba(0,255,65,0.18); border-color: #00ff41; }
+
+        button.action.active {
+            background: rgba(0,255,65,0.25);
+            border-color: #00ff41;
+        }
+
+        #eventLog {
+            position: fixed;
+            top: 0.6rem;
+            right: 0.8rem;
+            z-index: 10001;
+            font-size: 0.62rem;
+            color: rgba(0,255,65,0.5);
+            text-align: right;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+        }
+        .evt { animation: fadeEvt 3s forwards; }
+        @keyframes fadeEvt { 0%{opacity:1} 60%{opacity:1} 100%{opacity:0} }
     </style>
 </head>
 <body>
+
+<div id="eventLog"></div>
 
 <div id="rain">
     <div class="content">
@@ -309,10 +332,66 @@
         </div>
     </div>
 
+    <div class="sep"></div>
+
+    <!-- Theme -->
+    <div class="ctrl-col">
+        <label>THEME</label>
+        <div class="ctrl-group">
+            <button class="action active" id="themeGreen" onclick="setTheme('green',this)">Green</button>
+            <button class="action" id="themeRed"   onclick="setTheme('red',this)">Red</button>
+            <button class="action" id="themeBlue"  onclick="setTheme('blue',this)">Blue</button>
+            <button class="action" id="themeWhite" onclick="setTheme('white',this)">White</button>
+            <button class="action" id="themeAmber" onclick="setTheme('amber',this)">Amber</button>
+        </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Charset -->
+    <div class="ctrl-col">
+        <label>CHARSET</label>
+        <div class="ctrl-group">
+            <button class="action active" id="charKatakana" onclick="setChars('katakana',this)">Katakana</button>
+            <button class="action" id="charBinary" onclick="setChars('binary',this)">Binary</button>
+            <button class="action" id="charLatin"  onclick="setChars('latin',this)">Latin</button>
+            <button class="action" id="charBraille" onclick="setChars('braille',this)">Braille</button>
+        </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <!-- Fade out + Presets -->
+    <div class="ctrl-col">
+        <div class="sl-row">
+            <label style="width:4rem">FADE OUT</label>
+            <button class="arr" onclick="step('rFade',-1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">◀</button>
+            <input type="range" id="rFade" min="0" max="5" step="0.5" value="0"
+                   oninput="setVal('vFade',this.value); rain.configure({fadeOutDuration:+this.value})">
+            <button class="arr" onclick="step('rFade',+1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">▶</button>
+            <span class="val" id="vFade">0</span>
+        </div>
+        <div class="ctrl-group" style="margin-top:0.2rem">
+            <label>PRESET</label>
+            <button class="action" onclick="applyPreset('default')">Default</button>
+            <button class="action" onclick="applyPreset('storm')">Storm</button>
+            <button class="action" onclick="applyPreset('ghost')">Ghost</button>
+            <button class="action" onclick="applyPreset('inferno')">Inferno</button>
+            <button class="action" onclick="applyPreset('amber')">Amber</button>
+        </div>
+    </div>
+
 </div>
 
 <script src="digital-rain.js"></script>
 <script>
+    const CHARSETS = {
+        katakana: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
+        binary:   '01',
+        latin:    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()',
+        braille:  '⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯',
+    };
+
     const rain = new DigitalRain('#rain', {
         dropSpeed:       98,
         speedTiers: [
@@ -332,10 +411,71 @@
         burstIntervalMax:60,
         introDepth:      50,
         introSpeed:      98,
+        theme:           'green',
+        fadeOutDuration: 0,
+        on: {
+            start:          () => logEvent('▶ started'),
+            stop:           () => logEvent('■ stopped'),
+            introComplete:  () => logEvent('✓ intro done'),
+            burstStart:     (d) => logEvent(`⚡ burst col ${d.epicenter}`),
+            burstEnd:       () => logEvent('⚡ burst end'),
+        },
     });
 
     rain.start();
 
+    // ── Event log ─────────────────────────────────────────────────────────
+    function logEvent(msg) {
+        const log = document.getElementById('eventLog');
+        const el = document.createElement('div');
+        el.className = 'evt';
+        el.textContent = msg;
+        log.prepend(el);
+        setTimeout(() => el.remove(), 3100);
+    }
+
+    // ── Theme ──────────────────────────────────────────────────────────────
+    function setTheme(theme, btn) {
+        rain.configure({ theme });
+        rain.stop(); rain.start();
+        document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // ── Charset ────────────────────────────────────────────────────────────
+    function setChars(key, btn) {
+        rain.configure({ chars: CHARSETS[key] });
+        document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // ── Presets ────────────────────────────────────────────────────────────
+    function applyPreset(name) {
+        const p = DigitalRain.preset(name);
+        rain.configure(p);
+        rain.stop(); rain.start();
+        // Sync sliders to preset values
+        const s = (id, valId, v) => { const el = document.getElementById(id); if(el){ el.value=v; setVal(valId,v); } };
+        if (p.dropSpeed       != null) s('rSpeed',  'vSpeed',  p.dropSpeed);
+        if (p.dualFrequency   != null) s('rDual',   'vDual',   p.dualFrequency);
+        if (p.introDepth      != null) s('rIDepth', 'vIDepth', p.introDepth);
+        if (p.introSpeed      != null) s('rISpeed', 'vISpeed', p.introSpeed);
+        if (p.trailLengthFast != null) s('rTF',     'vTF',     p.trailLengthFast);
+        if (p.trailLengthSlow != null) s('rTS',     'vTS',     p.trailLengthSlow);
+        if (p.fadeOutDuration != null) s('rFade',   'vFade',   p.fadeOutDuration);
+        if (p.burstDurationMin!= null) s('rBDMin',  'vBDMin',  p.burstDurationMin);
+        if (p.burstDurationMax!= null) s('rBDMax',  'vBDMax',  p.burstDurationMax);
+        if (p.burstIntervalMin!= null) s('rBIMin',  'vBIMin',  p.burstIntervalMin);
+        if (p.burstIntervalMax!= null) s('rBIMax',  'vBIMax',  p.burstIntervalMax);
+        // Sync theme buttons
+        if (p.theme) {
+            document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
+            const tb = document.getElementById('theme' + p.theme.charAt(0).toUpperCase() + p.theme.slice(1));
+            if (tb) tb.classList.add('active');
+        }
+    }
+
+    // ── Randomize ──────────────────────────────────────────────────────────
     function randomizeAll() {
         function rInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
         function setSlider(id, valId, val) {
@@ -344,10 +484,6 @@
             setVal(valId, val);
         }
 
-        // const dropSpeed = rInt(20, 100);
-        // setSlider('rSpeed', 'vSpeed', dropSpeed);
-        // rain.configure({ dropSpeed });
-
         const dualFreq = rInt(0, 100);
         setSlider('rDual', 'vDual', dualFreq);
         rain.configure({ dualFrequency: dualFreq });
@@ -355,10 +491,6 @@
         const introDepth = rInt(0, 100);
         setSlider('rIDepth', 'vIDepth', introDepth);
         rain.configure({ introDepth });
-
-        // const introSpeed = rInt(20, 100);
-        // setSlider('rISpeed', 'vISpeed', introSpeed);
-        // rain.configure({ introSpeed });
 
         const trailFast = rInt(5, 100);
         setSlider('rTF', 'vTF', trailFast);
@@ -414,8 +546,6 @@
     function toggleTap() {
         const on = !rain._cfg.tapToBurst;
         rain.configure({ tapToBurst: on });
-        // Re-mount listeners by stopping and restarting isn't ideal —
-        // instead directly wire/unwire the canvas listener
         if (on) {
             rain._canvas.style.pointerEvents = 'auto';
             rain._canvas.addEventListener('click',      rain._boundTap);
@@ -430,9 +560,17 @@
 
     function toggleHideChildren() {
         const on = !rain._cfg.hideChildren;
-        rain.configure({ hideChildren: on });  // set BEFORE stop so _unmount sees new value
-        rain.stop();
-        rain.start();
+        if (!on) {
+            // Turning OFF: restore children first via stop, then restart without hiding
+            rain.configure({ hideChildren: false });
+            rain.stop();
+            rain.start();
+        } else {
+            // Turning ON: configure then restart — _mount will hide children
+            rain.configure({ hideChildren: true });
+            rain.stop();
+            rain.start();
+        }
         document.getElementById('hideChildrenToggle').textContent = `🙈 Hide Content: ${on ? 'On' : 'Off'}`;
     }
 

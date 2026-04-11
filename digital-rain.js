@@ -42,6 +42,8 @@ class DigitalRain {
         this._ringFronts   = null; // reused Float32Array
 
         this._childrenHidden = false;
+        this._fadeOutRaf     = null;
+        this._fadeOutAlpha   = 1;
 
         this._onResize = this._handleResize.bind(this);
     }
@@ -58,11 +60,42 @@ class DigitalRain {
         if (!this._running) return;
         this._running = false;
         clearTimeout(this._startTimer);
-        this._unmount();
-        window.removeEventListener('resize', this._onResize);
+        const fadeSecs = this._cfg.fadeOutDuration || 0;
+        if (fadeSecs > 0 && this._canvas) {
+            this._fadeOutAlpha = 1;
+            const totalFrames = Math.round(fadeSecs * 60);
+            let frame = 0;
+            const tick = () => {
+                frame++;
+                this._fadeOutAlpha = Math.max(0, 1 - frame / totalFrames);
+                this._canvas.style.opacity = this._fadeOutAlpha;
+                if (frame < totalFrames) {
+                    this._fadeOutRaf = requestAnimationFrame(tick);
+                } else {
+                    this._canvas.style.opacity = '';
+                    this._unmount();
+                    window.removeEventListener('resize', this._onResize);
+                }
+            };
+            this._fadeOutRaf = requestAnimationFrame(tick);
+        } else {
+            this._unmount();
+            window.removeEventListener('resize', this._onResize);
+        }
     }
 
     destroy() { this.stop(); }
+
+    on(event, fn) {
+        if (!this._cfg.on) this._cfg.on = {};
+        this._cfg.on[event] = fn;
+        return this;
+    }
+
+    _emit(event, data) {
+        const fn = this._cfg.on && this._cfg.on[event];
+        if (typeof fn === 'function') try { fn(data); } catch(e) {}
+    }
 
     triggerBurst(col) {
         if (!this._cfg.burst || !this._cols.length) return;
@@ -118,7 +151,11 @@ class DigitalRain {
 
     configure(o) {
         const prevSpeed = this._cfg.dropSpeed;
+        const prevChars = this._cfg.chars;
         Object.assign(this._cfg, o);
+        if (o.chars !== undefined && o.chars !== prevChars) {
+            this._CHARS = this._cfg.chars.split('');
+        }
         if (this._canvas) {
             this._computeCached();
             // If dropSpeed changed, recompute speed/steps on all existing streams
@@ -184,6 +221,15 @@ class DigitalRain {
             introDepth:     50,
             // Speed of the pioneer drop on the same 0–100 scale as dropSpeed
             introSpeed:     98,
+
+            // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber'
+            theme:          'green',
+
+            // Fade-out duration in seconds when stop() is called (0 = instant)
+            fadeOutDuration: 0,
+
+            // Event callbacks: { start, stop, introComplete, burstStart, burstEnd }
+            on:             {},
         };
     }
 
@@ -201,10 +247,29 @@ class DigitalRain {
         const si = cfg.introSpeed;
         this._introSpeedMult = si <= 0 ? 999 : si >= 100 ? 1 : Math.round(1 + (99 - si) / 99 * 59);
 
-        // Pre-build green color LUT: index 0–255 → 'rgb(0,g,0)' string
-        // Avoids template string allocation for every trail entry every frame
+        // Theme color LUT: index 0–255 → color string based on theme
+        // Each theme defines [rFn, gFn, bFn] as multipliers (0–1) of the brightness value
+        const theme = cfg.theme || 'green';
+        const THEMES = {
+            green:  (v) => `rgb(0,${v},0)`,
+            red:    (v) => `rgb(${v},0,0)`,
+            blue:   (v) => `rgb(0,${Math.round(v*0.4)},${v})`,
+            white:  (v) => `rgb(${v},${v},${v})`,
+            amber:  (v) => `rgb(${v},${Math.round(v*0.6)},0)`,
+        };
+        const colorFn = THEMES[theme] || THEMES.green;
         this._greenLUT = new Array(256);
-        for (let g = 0; g < 256; g++) this._greenLUT[g] = `rgb(0,${g},0)`;
+        for (let v = 0; v < 256; v++) this._greenLUT[v] = colorFn(v);
+
+        // Head/glow colors derived from theme
+        const HEAD_COLORS = {
+            green:  { head: '#00ff41', glow: 'rgba(0,255,0,',    burst: [0,255,0]   },
+            red:    { head: '#ff3300', glow: 'rgba(255,80,0,',   burst: [255,80,0]  },
+            blue:   { head: '#00cfff', glow: 'rgba(0,150,255,',  burst: [0,150,255] },
+            white:  { head: '#ffffff', glow: 'rgba(220,220,220,', burst: [220,220,220] },
+            amber:  { head: '#ffaa00', glow: 'rgba(255,160,0,',  burst: [255,160,0] },
+        };
+        this._themeColors = HEAD_COLORS[theme] || HEAD_COLORS.green;
     }
 
     _makeFrameSkip() {
@@ -341,9 +406,11 @@ class DigitalRain {
             this._canvas.addEventListener('touchstart', this._boundTap, { passive: true });
         }
         this._rafId = requestAnimationFrame(this._boundDraw);
+        this._emit('start');
     }
 
     _unmount() {
+        if (this._fadeOutRaf) { cancelAnimationFrame(this._fadeOutRaf); this._fadeOutRaf = null; }
         if (this._rafId)  { cancelAnimationFrame(this._rafId); this._rafId = null; }
         if (this._canvas) {
             if (this._boundTap) {
@@ -365,6 +432,7 @@ class DigitalRain {
         this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
         this._burstAngle = 0; this._burstNoise = null; this._burstJag = null;
         this._booting = true; this._bootStream = null; this._bootTargetRow = 0;
+        this._emit('stop');
     }
 
     _initColumns() {
@@ -425,12 +493,12 @@ class DigitalRain {
                 ctx.fillRect(centerX, cy, fw, fw);
                 const isHead = (t === bs.trails.length - 1);
                 if (isHead) {
-                    ctx.fillStyle = `rgba(0,255,65,${cfg.glowAlpha})`;
+                    ctx.fillStyle = `${this._themeColors.glow}${cfg.glowAlpha})`;
                     ctx.fillText(e.char, centerX - 1, cy + fw - 2);
                     ctx.fillText(e.char, centerX + 1, cy + fw - 2);
                     ctx.fillText(e.char, centerX,     cy + fw - 3);
                     ctx.fillText(e.char, centerX,     cy + fw - 1);
-                    ctx.fillStyle = '#00ff41';
+                    ctx.fillStyle = this._themeColors.head;
                 } else {
                     const cl = Math.min(1, e.brightness / bs.steps);
                     ctx.fillStyle = this._greenLUT[cl * cl * 255 | 0];
@@ -453,6 +521,7 @@ class DigitalRain {
                         (cfg.burstFirstMin + Math.random() * (cfg.burstFirstMax - cfg.burstFirstMin)) * 60
                     );
                 }
+                this._emit('introComplete');
             }
 
             this._rafId = requestAnimationFrame(this._boundDraw);
@@ -467,6 +536,7 @@ class DigitalRain {
         // ── Burst (lightning) ─────────────────────────────────────────────
         if (cfg.burst && !this._burstActive && fc >= this._nextBurstFrame) {
             this.triggerBurst();
+            this._emit('burstStart', { epicenter: this._burstEpicenter });
         }
         if (this._burstActive) {
             if (--this._burstFramesLeft <= 0) {
@@ -476,6 +546,7 @@ class DigitalRain {
                 this._nextBurstFrame = fc + Math.round(
                     (cfg.burstIntervalMin + Math.random() * (cfg.burstIntervalMax - cfg.burstIntervalMin)) * 60
                 );
+                this._emit('burstEnd');
             }
         }
 
@@ -493,8 +564,10 @@ class DigitalRain {
         const decay          = lightningDecay;
 
         ctx.font = this._fontStr; // set once per frame
-        const greenLUT = this._greenLUT;
-        const glowLUT  = `rgba(0,255,0,${cfg.glowAlpha})`;
+        const greenLUT   = this._greenLUT;
+        const themeColors = this._themeColors;
+        const glowLUT    = `${themeColors.glow}${cfg.glowAlpha})`;
+        const [bR, bG, bB] = themeColors.burst;
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
@@ -637,7 +710,6 @@ class DigitalRain {
                         }
                     }
 
-                    const rb        = bIntens * 255 | 0;
                     const whiten    = bIntens * bIntens; // quadratic push to white at peak
                     const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
 
@@ -647,34 +719,37 @@ class DigitalRain {
                     if (t === headIdx) {
                         ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                         if (bIntens > 0) {
-                            ctx.fillStyle = `rgba(${rb},255,${rb},${glowAlpha})`;
+                            // Glow pass: theme color at burst intensity
+                            const gR = Math.min(255, bR * bIntens | 0);
+                            const gG = Math.min(255, bG * bIntens | 0);
+                            const gB = Math.min(255, bB * bIntens | 0);
+                            ctx.fillStyle = `rgba(${gR},${gG},${gB},${glowAlpha})`;
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
                             ctx.fillText(e.char, x + 1, cy + fw - 2);
                             ctx.fillText(e.char, x,     cy + fw - 3);
                             ctx.fillText(e.char, x,     cy + fw - 1);
-                            // Head: near-white at peak intensity
-                            const hw = 255 * whiten | 0;
-                            ctx.fillStyle = `rgb(${hw},255,${hw})`;
+                            // Head: theme color pushed toward white at peak
+                            const boost = whiten * 255 | 0;
+                            ctx.fillStyle = `rgb(${Math.min(255, gR + boost)},${Math.min(255, gG + boost)},${Math.min(255, gB + boost)})`;
                         } else {
                             ctx.fillStyle = glowLUT;
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
                             ctx.fillText(e.char, x + 1, cy + fw - 2);
                             ctx.fillText(e.char, x,     cy + fw - 3);
                             ctx.fillText(e.char, x,     cy + fw - 1);
-                            ctx.fillStyle = '#00ff41';
+                            ctx.fillStyle = themeColors.head;
                         }
                         ctx.fillText(e.char, x, cy + fw - 2);
                     } else {
-                        const cl1    = e.brightness / st.steps;
-                        const cl     = cl1 > 1 ? 1 : cl1;
+                        const cl1 = e.brightness / st.steps;
+                        const cl  = cl1 > 1 ? 1 : cl1;
                         if (bIntens > 0) {
-                            const base_g = cl * cl * 255 | 0;
-                            const g      = base_g + (bIntens * 220 | 0);
-                            // Push toward white: all channels rise with whiten
-                            const boost  = whiten * 255 | 0;
-                            const trb    = ((bIntens * cl * 230 | 0) + boost) > 255 ? 255 : (bIntens * cl * 230 | 0) + boost;
-                            const tg     = (g + boost) > 255 ? 255 : g + boost;
-                            ctx.fillStyle = `rgb(${trb},${tg},${trb})`;
+                            // Trail: theme color brightened by burst intensity
+                            const boost = whiten * 255 | 0;
+                            const tr = Math.min(255, (cl * cl * bR | 0) + (bIntens * bR | 0) + boost);
+                            const tg = Math.min(255, (cl * cl * bG | 0) + (bIntens * bG | 0) + boost);
+                            const tb = Math.min(255, (cl * cl * bB | 0) + (bIntens * bB | 0) + boost);
+                            ctx.fillStyle = `rgb(${tr},${tg},${tb})`;
                         } else {
                             ctx.fillStyle = greenLUT[cl * cl * 255 | 0];
                         }
@@ -689,5 +764,48 @@ class DigitalRain {
         }
 
         this._rafId = requestAnimationFrame(this._boundDraw);
+    }
+
+    // ── Presets ───────────────────────────────────────────────────────────
+
+    static get PRESETS() {
+        return {
+            default: {
+                dropSpeed: 98, dualFrequency: 50, trailLengthFast: 28, trailLengthSlow: 70,
+                theme: 'green', chars: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
+                burstDurationMin: 10, burstDurationMax: 18, burstIntervalMin: 30, burstIntervalMax: 60,
+                introDepth: 50, introSpeed: 98, fadeOutDuration: 0,
+            },
+            storm: {
+                dropSpeed: 100, dualFrequency: 90, trailLengthFast: 15, trailLengthSlow: 35,
+                theme: 'blue', chars: '01',
+                burstDurationMin: 5, burstDurationMax: 10, burstIntervalMin: 8, burstIntervalMax: 20,
+                introDepth: 0, fadeOutDuration: 0,
+            },
+            ghost: {
+                dropSpeed: 30, dualFrequency: 10, trailLengthFast: 60, trailLengthSlow: 140,
+                theme: 'white', chars: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ',
+                burstDurationMin: 20, burstDurationMax: 35, burstIntervalMin: 90, burstIntervalMax: 180,
+                introDepth: 100, introSpeed: 20, fadeOutDuration: 2,
+            },
+            inferno: {
+                dropSpeed: 85, dualFrequency: 60, trailLengthFast: 20, trailLengthSlow: 55,
+                theme: 'red', chars: '炎火熱燃焼灼熾烈赤橙ABCDEF0123456789',
+                burstDurationMin: 8, burstDurationMax: 15, burstIntervalMin: 15, burstIntervalMax: 40,
+                introDepth: 50, introSpeed: 98, fadeOutDuration: 1,
+            },
+            amber: {
+                dropSpeed: 60, dualFrequency: 30, trailLengthFast: 35, trailLengthSlow: 90,
+                theme: 'amber', chars: '⣿⣻⣽⣾⣷⣯⣟⡿⢿ABCDEF0123456789',
+                burstDurationMin: 12, burstDurationMax: 22, burstIntervalMin: 45, burstIntervalMax: 90,
+                introDepth: 75, introSpeed: 70, fadeOutDuration: 1.5,
+            },
+        };
+    }
+
+    static preset(name) {
+        const p = DigitalRain.PRESETS[name];
+        if (!p) throw new Error(`DigitalRain: unknown preset "${name}"`);
+        return Object.assign({}, p);
     }
 }
