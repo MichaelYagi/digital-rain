@@ -826,47 +826,4 @@ class DigitalRain {
 
         this._rafId = requestAnimationFrame(this._boundDraw);
     }
-
-    // ── Presets ───────────────────────────────────────────────────────────
-
-    static get PRESETS() {
-        return {
-            default: {
-                dropSpeed: 98, dualFrequency: 50, trailLengthFast: 28, trailLengthSlow: 70,
-                theme: 'green', chars: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
-                burstDurationMin: 10, burstDurationMax: 18, burstIntervalMin: 30, burstIntervalMax: 60,
-                introDepth: 50, introSpeed: 98, fadeOutDuration: 0,
-            },
-            storm: {
-                dropSpeed: 100, dualFrequency: 90, trailLengthFast: 15, trailLengthSlow: 35,
-                theme: 'blue', chars: '01',
-                burstDurationMin: 5, burstDurationMax: 10, burstIntervalMin: 8, burstIntervalMax: 20,
-                introDepth: 0, fadeOutDuration: 0,
-            },
-            ghost: {
-                dropSpeed: 30, dualFrequency: 10, trailLengthFast: 60, trailLengthSlow: 140,
-                theme: 'white', chars: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ',
-                burstDurationMin: 20, burstDurationMax: 35, burstIntervalMin: 90, burstIntervalMax: 180,
-                introDepth: 100, introSpeed: 20, fadeOutDuration: 2,
-            },
-            inferno: {
-                dropSpeed: 85, dualFrequency: 60, trailLengthFast: 20, trailLengthSlow: 55,
-                theme: 'red', chars: '炎火熱燃焼灼熾烈赤橙ABCDEF0123456789',
-                burstDurationMin: 8, burstDurationMax: 15, burstIntervalMin: 15, burstIntervalMax: 40,
-                introDepth: 50, introSpeed: 98, fadeOutDuration: 1,
-            },
-            amber: {
-                dropSpeed: 60, dualFrequency: 30, trailLengthFast: 35, trailLengthSlow: 90,
-                theme: 'amber', chars: '⣿⣻⣽⣾⣷⣯⣟⡿⢿ABCDEF0123456789',
-                burstDurationMin: 12, burstDurationMax: 22, burstIntervalMin: 45, burstIntervalMax: 90,
-                introDepth: 75, introSpeed: 70, fadeOutDuration: 1.5,
-            },
-        };
-    }
-
-    static preset(name) {
-        const p = DigitalRain.PRESETS[name];
-        if (!p) throw new Error(`DigitalRain: unknown preset "${name}"`);
-        return Object.assign({}, p);
-    }
 }
