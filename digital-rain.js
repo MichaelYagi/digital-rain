@@ -273,7 +273,7 @@ class DigitalRain {
         this._introSpeedMult = si <= 0 ? 999 : si >= 100 ? 1 : Math.round(1 + (99 - si) / 99 * 59);
 
         // Theme color LUT: index 0–255 → color string based on theme
-        // Each theme defines [rFn, gFn, bFn] as multipliers (0–1) of the brightness value
+        // theme can be a named string ('green', 'red', etc.) or a hex color ('#ff00ff', '#0cf')
         const theme = cfg.theme || 'green';
         const THEMES = {
             green:  (v) => `rgb(0,${v},0)`,
@@ -282,11 +282,6 @@ class DigitalRain {
             white:  (v) => `rgb(${v},${v},${v})`,
             amber:  (v) => `rgb(${v},${Math.round(v*0.6)},0)`,
         };
-        const colorFn = THEMES[theme] || THEMES.green;
-        this._greenLUT = new Array(256);
-        for (let v = 0; v < 256; v++) this._greenLUT[v] = colorFn(v);
-
-        // Head/glow colors derived from theme
         const HEAD_COLORS = {
             green:  { head: '#00ff41', glow: 'rgba(0,255,0,',    burst: [0,255,0]   },
             red:    { head: '#ff3300', glow: 'rgba(255,80,0,',   burst: [255,80,0]  },
@@ -294,7 +289,47 @@ class DigitalRain {
             white:  { head: '#ffffff', glow: 'rgba(220,220,220,', burst: [220,220,220] },
             amber:  { head: '#ffaa00', glow: 'rgba(255,160,0,',  burst: [255,160,0] },
         };
-        this._themeColors = HEAD_COLORS[theme] || HEAD_COLORS.green;
+
+        // Parse hex color string → [r, g, b] or null
+        const parseHex = (str) => {
+            const s = str.replace('#', '');
+            if (s.length === 3) {
+                return [
+                    parseInt(s[0]+s[0], 16),
+                    parseInt(s[1]+s[1], 16),
+                    parseInt(s[2]+s[2], 16),
+                ];
+            }
+            if (s.length === 6) {
+                return [
+                    parseInt(s.slice(0,2), 16),
+                    parseInt(s.slice(2,4), 16),
+                    parseInt(s.slice(4,6), 16),
+                ];
+            }
+            return null;
+        };
+
+        let colorFn, themeColors;
+        const hexRgb = theme.startsWith('#') ? parseHex(theme) : null;
+        if (hexRgb) {
+            const [hr, hg, hb] = hexRgb;
+            // Normalise to 0–1 so trail scales cleanly with brightness
+            const rn = hr / 255, gn = hg / 255, bn = hb / 255;
+            colorFn = (v) => `rgb(${Math.round(v*rn)},${Math.round(v*gn)},${Math.round(v*bn)})`;
+            themeColors = {
+                head:  `#${hr.toString(16).padStart(2,'0')}${hg.toString(16).padStart(2,'0')}${hb.toString(16).padStart(2,'0')}`,
+                glow:  `rgba(${hr},${hg},${hb},`,
+                burst: [hr, hg, hb],
+            };
+        } else {
+            colorFn     = THEMES[theme]      || THEMES.green;
+            themeColors = HEAD_COLORS[theme] || HEAD_COLORS.green;
+        }
+
+        this._greenLUT = new Array(256);
+        for (let v = 0; v < 256; v++) this._greenLUT[v] = colorFn(v);
+        this._themeColors = themeColors;
     }
 
     _makeFrameSkip() {
