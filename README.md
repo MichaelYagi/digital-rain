@@ -55,8 +55,10 @@ new DigitalRain('#container', {
     // Character set — any string; each character is used with equal probability
     chars:            'アイウエオカキクケコ...0123456789ABCDEF',
 
-    // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber'
-    // Affects trail color, head glow, and burst flash color
+    // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber' | '#rrggbb' | '#rgb' | any CSS color name
+    // Named themes use hand-tuned glow/burst colors.
+    // Hex strings and CSS color names ('cyan', 'hotpink', etc.) derive all colors automatically.
+    // Unrecognised values log a console warning and fall back to green.
     theme:            'green',
 
     // ── Speed ─────────────────────────────────────────────────────────────
@@ -161,7 +163,9 @@ rain.on('introComplete', () => console.log('ready'))
 
 ## Color themes
 
-The `theme` option controls trail color, head glow, and burst flash color together.
+The `theme` option controls trail color, head glow, and burst flash color together. It accepts either a named theme or any hex color string.
+
+**Named themes**
 
 | Value     | Color |
 |-----------|-------|
@@ -171,9 +175,22 @@ The `theme` option controls trail color, head glow, and burst flash color togeth
 | `'white'` | Cool white/grey |
 | `'amber'` | Warm amber/gold |
 
+**Hex colors**
+
+Any 3- or 6-digit hex string is accepted. The trail LUT, head color, glow, and burst flash are all derived automatically from the parsed RGB values.
+
 ```js
-rain.configure({ theme: 'blue' });   // live switch, no restart needed for color;
-                                      // call stop()/start() to also reset the intro
+rain.configure({ theme: '#ff00ff' });  // magenta
+rain.configure({ theme: '#0cf' });     // shorthand cyan
+rain.configure({ theme: '#ff6600' });  // orange
+```
+
+All theme changes take effect immediately via `configure()` — no restart needed for color alone. Call `stop()`/`start()` if you also want to reset the intro.
+
+Unrecognised values log a console warning and fall back to green.
+
+```js
+rain.configure({ theme: 'blue' });
 ```
 
 ---

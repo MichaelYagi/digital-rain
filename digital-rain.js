@@ -273,7 +273,8 @@ class DigitalRain {
         this._introSpeedMult = si <= 0 ? 999 : si >= 100 ? 1 : Math.round(1 + (99 - si) / 99 * 59);
 
         // Theme color LUT: index 0–255 → color string based on theme
-        // theme can be a named string ('green', 'red', etc.) or a hex color ('#ff00ff', '#0cf')
+        // theme can be a built-in name ('green', 'red', etc.), a hex string ('#ff00ff', '#0cf'),
+        // or any valid CSS color name ('cyan', 'magenta', 'hotpink', etc.)
         const theme = cfg.theme || 'green';
         const THEMES = {
             green:  (v) => `rgb(0,${v},0)`,
@@ -290,41 +291,58 @@ class DigitalRain {
             amber:  { head: '#ffaa00', glow: 'rgba(255,160,0,',  burst: [255,160,0] },
         };
 
-        // Parse hex color string → [r, g, b] or null
-        const parseHex = (str) => {
-            const s = str.replace('#', '');
-            if (s.length === 3) {
-                return [
-                    parseInt(s[0]+s[0], 16),
-                    parseInt(s[1]+s[1], 16),
-                    parseInt(s[2]+s[2], 16),
-                ];
-            }
-            if (s.length === 6) {
-                return [
-                    parseInt(s.slice(0,2), 16),
-                    parseInt(s.slice(2,4), 16),
-                    parseInt(s.slice(4,6), 16),
-                ];
-            }
+        // Parse any CSS color string → [r, g, b] or null using browser color parsing
+        const parseCSSColor = (str) => {
+            try {
+                const tmp = document.createElement('canvas');
+                tmp.width = tmp.height = 1;
+                const ctx = tmp.getContext('2d');
+                ctx.fillStyle = '#000'; // reset
+                ctx.fillStyle = str;
+                const computed = ctx.fillStyle;
+                // fillStyle normalises to '#rrggbb' for valid colors
+                if (computed.startsWith('#')) {
+                    const s = computed.slice(1);
+                    return [
+                        parseInt(s.slice(0,2), 16),
+                        parseInt(s.slice(2,4), 16),
+                        parseInt(s.slice(4,6), 16),
+                    ];
+                }
+                // Some browsers return rgb(...) instead
+                const m = computed.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (m) return [+m[1], +m[2], +m[3]];
+            } catch(e) {}
             return null;
         };
 
-        let colorFn, themeColors;
-        const hexRgb = theme.startsWith('#') ? parseHex(theme) : null;
-        if (hexRgb) {
-            const [hr, hg, hb] = hexRgb;
-            // Normalise to 0–1 so trail scales cleanly with brightness
+        const buildFromRgb = ([hr, hg, hb]) => {
             const rn = hr / 255, gn = hg / 255, bn = hb / 255;
-            colorFn = (v) => `rgb(${Math.round(v*rn)},${Math.round(v*gn)},${Math.round(v*bn)})`;
-            themeColors = {
-                head:  `#${hr.toString(16).padStart(2,'0')}${hg.toString(16).padStart(2,'0')}${hb.toString(16).padStart(2,'0')}`,
-                glow:  `rgba(${hr},${hg},${hb},`,
-                burst: [hr, hg, hb],
+            return {
+                colorFn:     (v) => `rgb(${Math.round(v*rn)},${Math.round(v*gn)},${Math.round(v*bn)})`,
+                themeColors: {
+                    head:  `#${hr.toString(16).padStart(2,'0')}${hg.toString(16).padStart(2,'0')}${hb.toString(16).padStart(2,'0')}`,
+                    glow:  `rgba(${hr},${hg},${hb},`,
+                    burst: [hr, hg, hb],
+                },
             };
+        };
+
+        let colorFn, themeColors;
+        if (THEMES[theme]) {
+            // Named built-in theme — use hand-tuned values
+            colorFn     = THEMES[theme];
+            themeColors = HEAD_COLORS[theme];
         } else {
-            colorFn     = THEMES[theme]      || THEMES.green;
-            themeColors = HEAD_COLORS[theme] || HEAD_COLORS.green;
+            // Hex or CSS named color — parse via browser
+            const rgb = parseCSSColor(theme);
+            if (rgb) {
+                ({ colorFn, themeColors } = buildFromRgb(rgb));
+            } else {
+                console.warn(`DigitalRain: unrecognised theme "${theme}", falling back to green`);
+                colorFn     = THEMES.green;
+                themeColors = HEAD_COLORS.green;
+            }
         }
 
         this._greenLUT = new Array(256);
