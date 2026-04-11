@@ -44,6 +44,7 @@ class DigitalRain {
         this._childrenHidden = false;
         this._fadeOutRaf     = null;
         this._fadeOutAlpha   = 1;
+        this._paused         = false;
 
         this._onResize = this._handleResize.bind(this);
     }
@@ -85,6 +86,30 @@ class DigitalRain {
     }
 
     destroy() { this.stop(); }
+
+    pause() {
+        if (!this._running || this._paused) return;
+        this._paused = true;
+        if (this._rafId) { cancelAnimationFrame(this._rafId); this._rafId = null; }
+        this._emit('pause');
+    }
+
+    resume() {
+        if (!this._running) { this.start(); return; }
+        if (!this._paused) return;
+        this._paused = false;
+        this._rafId = requestAnimationFrame(this._boundDraw);
+        this._emit('resume');
+    }
+
+    snapshot() {
+        return JSON.parse(JSON.stringify(this._cfg));
+    }
+
+    restore(snap) {
+        if (!snap || typeof snap !== 'object') return;
+        this.configure(snap);
+    }
 
     on(event, fn) {
         if (!this._cfg.on) this._cfg.on = {};
@@ -432,6 +457,7 @@ class DigitalRain {
         this._burstEpicenter = -1; this._burstEpicenterRow = -1; this._burstRadius = 0;
         this._burstAngle = 0; this._burstNoise = null; this._burstJag = null;
         this._booting = true; this._bootStream = null; this._bootTargetRow = 0;
+        this._paused = false;
         this._emit('stop');
     }
 

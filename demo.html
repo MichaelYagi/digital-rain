@@ -415,7 +415,7 @@
 
     <!-- ── Toolbar ── -->
     <div id="toolbar">
-        <button class="tb-btn" onclick="rain.start()">▶</button>
+        <button class="tb-btn" id="playToggle" onclick="togglePlay()">▶</button>
         <button class="tb-btn" onclick="restartRain()">↺</button>
         <button class="tb-btn" onclick="rain.stop()">■</button>
         <div class="tb-sep"></div>
@@ -460,11 +460,13 @@
         theme:           'green',
         fadeOutDuration: 0,
         on: {
-            start:         () => logEvent('▶ started'),
-            stop:          () => logEvent('■ stopped'),
+            start:         () => { logEvent('▶ started');  updatePlayBtn(); },
+            stop:          () => { logEvent('■ stopped');  updatePlayBtn(); },
             introComplete: () => logEvent('✓ intro done'),
             burstStart:    (d) => logEvent(`⚡ burst col ${d.epicenter}`),
             burstEnd:      () => logEvent('⚡ burst end'),
+            pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
+            resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
         },
     });
 
@@ -496,6 +498,17 @@
     }
 
     // ── Playback ───────────────────────────────────────────────────────────
+    function updatePlayBtn() {
+        const btn = document.getElementById('playToggle');
+        btn.textContent = (rain._running && !rain._paused) ? '⏸' : '▶';
+    }
+
+    function togglePlay() {
+        if (!rain._running)   { rain.start();  return; }
+        if (rain._paused)     { rain.resume(); return; }
+        rain.pause();
+    }
+
     function restartRain() { rain.stop(); rain.start(); }
 
     function toggleBurst() {
@@ -592,6 +605,7 @@
     // Sync initial toggle states
     document.getElementById('burstToggle').classList.toggle('active', rain._cfg.burst);
     document.getElementById('tapToggle').classList.toggle('active',   rain._cfg.tapToBurst);
+    updatePlayBtn();
 </script>
 </body>
 </html>
