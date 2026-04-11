@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Digital Rain — Demo</title>
-    <!-- <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet"> -->
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -20,7 +19,7 @@
 
         .content {
             position: relative;
-            z-index: 1;          /* below canvas (z-index: 9999) */
+            z-index: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -30,125 +29,7 @@
             pointer-events: none;
         }
 
-        #controls {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 10000;
-            background: rgba(0,0,0,0.88);
-            border-top: 1px solid rgba(0,255,65,0.2);
-            padding: 0.6rem 1rem;
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 0.6rem 1.2rem;
-        }
-
-        .ctrl-group {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-
-        .ctrl-col {
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-        }
-
-        label, .lbl {
-            font-size: 0.65rem;
-            letter-spacing: 0.08em;
-            color: rgba(0,255,65,0.55);
-            white-space: nowrap;
-        }
-
-        .sep {
-            width: 1px;
-            height: 28px;
-            background: rgba(0,255,65,0.15);
-            flex-shrink: 0;
-        }
-
-        /* Arrow + slider row */
-        .sl-row {
-            display: flex;
-            align-items: center;
-            gap: 0.25rem;
-        }
-
-        .arr {
-            background: none;
-            border: none;
-            color: rgba(0,255,65,0.5);
-            font-size: 0.75rem;
-            cursor: pointer;
-            padding: 0 0.15rem;
-            line-height: 1;
-            transition: color 0.1s;
-        }
-        .arr:hover { color: #00ff41; }
-
-        input[type=range] {
-            -webkit-appearance: none;
-            width: 80px;
-            height: 2px;
-            background: rgba(0,255,65,0.22);
-            outline: none;
-            cursor: pointer;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 9px; height: 9px;
-            border-radius: 50%;
-            background: #00ff41;
-            cursor: pointer;
-        }
-        input[type=range]::-moz-range-thumb {
-            width: 9px; height: 9px;
-            border-radius: 50%;
-            background: #00ff41;
-            border: none;
-            cursor: pointer;
-        }
-
-        .val {
-            font-size: 0.65rem;
-            color: #00ff41;
-            min-width: 3ch;
-            text-align: right;
-        }
-
-        .tier-label {
-            font-size: 0.6rem;
-            color: rgba(0,255,65,0.4);
-            width: 4rem;
-        }
-
-        button.action {
-            background: rgba(0,255,65,0.07);
-            color: #00ff41;
-            border: 1px solid rgba(0,255,65,0.28);
-            padding: 0.3rem 0.8rem;
-            font-family: "Courier New", monospace;
-            font-size: 0.72rem;
-            cursor: pointer;
-            letter-spacing: 0.06em;
-            transition: background 0.12s;
-            white-space: nowrap;
-            line-height: 1.4;
-            display: inline-flex;
-            align-items: center;
-            gap: 0.3rem;
-        }
-        button.action:hover { background: rgba(0,255,65,0.18); border-color: #00ff41; }
-
-        button.action.active {
-            background: rgba(0,255,65,0.25);
-            border-color: #00ff41;
-        }
-
+        /* ── Event log ─────────────────────────────────── */
         #eventLog {
             position: fixed;
             top: 0.6rem;
@@ -164,6 +45,187 @@
         }
         .evt { animation: fadeEvt 3s forwards; }
         @keyframes fadeEvt { 0%{opacity:1} 60%{opacity:1} 100%{opacity:0} }
+
+        /* ── Panel shell ───────────────────────────────── */
+        #panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Drawer ────────────────────────────────────── */
+        #drawer {
+            background: rgba(0,0,0,0.95);
+            border-top: 1px solid rgba(0,255,65,0.12);
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.28s ease;
+        }
+        #drawer.open { max-height: 340px; }
+
+        /* ── Tab bar ───────────────────────────────────── */
+        #tabBar {
+            display: flex;
+            border-bottom: 1px solid rgba(0,255,65,0.12);
+        }
+        .tab {
+            flex: 1;
+            padding: 0.4rem 0.5rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.62rem;
+            letter-spacing: 0.08em;
+            color: rgba(0,255,65,0.4);
+            background: none;
+            border: none;
+            cursor: pointer;
+            text-align: center;
+            border-bottom: 2px solid transparent;
+            transition: color 0.1s, border-color 0.1s;
+            white-space: nowrap;
+        }
+        .tab:hover  { color: rgba(0,255,65,0.7); }
+        .tab.active { color: #00ff41; border-bottom-color: #00ff41; }
+
+        /* ── Tab panels ────────────────────────────────── */
+        .tab-panel {
+            display: none;
+            padding: 0.65rem 0.85rem 0.75rem;
+            overflow-y: auto;
+            max-height: 268px;
+        }
+        .tab-panel.active { display: flex; flex-wrap: wrap; gap: 0.8rem 1.6rem; align-items: flex-start; }
+
+        /* ── Control primitives ────────────────────────── */
+        .ctrl-col {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .ctrl-label {
+            font-size: 0.58rem;
+            letter-spacing: 0.1em;
+            color: rgba(0,255,65,0.45);
+            margin-bottom: 0.1rem;
+        }
+
+        .sl-row {
+            display: flex;
+            align-items: center;
+            gap: 0.2rem;
+        }
+
+        .sl-lbl {
+            font-size: 0.58rem;
+            color: rgba(0,255,65,0.4);
+            width: 4.4rem;
+            flex-shrink: 0;
+        }
+
+        .arr {
+            background: none;
+            border: none;
+            color: rgba(0,255,65,0.45);
+            font-size: 0.7rem;
+            cursor: pointer;
+            padding: 0 0.1rem;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .arr:hover { color: #00ff41; }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 72px;
+            height: 2px;
+            background: rgba(0,255,65,0.2);
+            outline: none;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #00ff41;
+            cursor: pointer;
+        }
+        input[type=range]::-moz-range-thumb {
+            width: 9px; height: 9px;
+            border-radius: 50%;
+            background: #00ff41;
+            border: none;
+        }
+
+        .val {
+            font-size: 0.62rem;
+            color: #00ff41;
+            min-width: 2.5ch;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        /* Pill buttons (theme / charset / preset) */
+        .btn-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+        }
+        .pill {
+            background: rgba(0,255,65,0.06);
+            color: rgba(0,255,65,0.7);
+            border: 1px solid rgba(0,255,65,0.2);
+            padding: 0.2rem 0.55rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.64rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.1s, border-color 0.1s, color 0.1s;
+        }
+        .pill:hover  { background: rgba(0,255,65,0.14); border-color: rgba(0,255,65,0.6); color: #00ff41; }
+        .pill.active { background: rgba(0,255,65,0.2);  border-color: #00ff41; color: #00ff41; }
+
+        /* ── Toolbar (always visible) ──────────────────── */
+        #toolbar {
+            background: rgba(0,0,0,0.92);
+            border-top: 1px solid rgba(0,255,65,0.2);
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.4rem 0.7rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #toolbar::-webkit-scrollbar { display: none; }
+
+        .tb-btn {
+            background: rgba(0,255,65,0.06);
+            color: rgba(0,255,65,0.8);
+            border: 1px solid rgba(0,255,65,0.22);
+            padding: 0.28rem 0.6rem;
+            font-family: "Courier New", monospace;
+            font-size: 0.68rem;
+            cursor: pointer;
+            white-space: nowrap;
+            flex-shrink: 0;
+            transition: background 0.1s, border-color 0.1s, color 0.1s;
+            line-height: 1.4;
+        }
+        .tb-btn:hover  { background: rgba(0,255,65,0.15); border-color: #00ff41; color: #00ff41; }
+        .tb-btn.active { background: rgba(0,255,65,0.2);  border-color: #00ff41; color: #00ff41; }
+
+        .tb-sep {
+            width: 1px;
+            height: 18px;
+            background: rgba(0,255,65,0.15);
+            flex-shrink: 0;
+        }
+
+        #tabToggle { margin-left: auto; }
     </style>
 </head>
 <body>
@@ -177,208 +239,200 @@
     </div>
 </div>
 
-<div id="controls">
+<div id="panel">
 
-    <!-- Playback -->
-    <div class="ctrl-group">
-        <button class="action" onclick="rain.start()">▶ Start</button>
-        <button class="action" onclick="restartRain()">🔄 Restart</button>
-        <button class="action" onclick="rain.stop()">■ Stop</button>
-        <button class="action" id="burstToggle" onclick="toggleBurst()">⚡ Burst: On</button>
-        <button class="action" id="tapToggle" onclick="toggleTap()">👆 Tap: On</button>
-        <button class="action" id="hideChildrenToggle" onclick="toggleHideChildren()">🙈 Hide Content: Off</button>
-        <button class="action" onclick="randomizeAll()">Randomize</button>
+    <!-- ── Drawer (slides up) ── -->
+    <div id="drawer">
+        <div id="tabBar">
+            <button class="tab active" onclick="showTab('rain',this)">RAIN</button>
+            <button class="tab" onclick="showTab('burst',this)">BURST</button>
+            <button class="tab" onclick="showTab('tiers',this)">TIERS</button>
+            <button class="tab" onclick="showTab('style',this)">STYLE</button>
+        </div>
+
+        <!-- RAIN tab -->
+        <div id="tab-rain" class="tab-panel active">
+            <div class="ctrl-col">
+                <div class="ctrl-label">SPEED</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
+                    <input type="range" id="rSpeed" min="0" max="100" value="98"
+                           oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
+                    <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
+                    <span class="val" id="vSpeed">98</span>
+                </div>
+                <div class="ctrl-label" style="margin-top:0.3rem">DUAL FREQ</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="step('rDual',-1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">◀</button>
+                    <input type="range" id="rDual" min="0" max="100" value="50"
+                           oninput="setVal('vDual',this.value); rain.configure({dualFrequency:+this.value})">
+                    <button class="arr" onclick="step('rDual',+1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">▶</button>
+                    <span class="val" id="vDual">50</span>
+                </div>
+            </div>
+
+            <div class="ctrl-col">
+                <div class="ctrl-label">TRAIL</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">short</span>
+                    <button class="arr" onclick="step('rTF',-1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">◀</button>
+                    <input type="range" id="rTF" min="5" max="100" value="28"
+                           oninput="setVal('vTF',this.value); rain.configure({trailLengthFast:+this.value})">
+                    <button class="arr" onclick="step('rTF',+1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">▶</button>
+                    <span class="val" id="vTF">28</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">long</span>
+                    <button class="arr" onclick="step('rTS',-1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">◀</button>
+                    <input type="range" id="rTS" min="5" max="150" value="70"
+                           oninput="setVal('vTS',this.value); rain.configure({trailLengthSlow:+this.value})">
+                    <button class="arr" onclick="step('rTS',+1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">▶</button>
+                    <span class="val" id="vTS">70</span>
+                </div>
+            </div>
+
+            <div class="ctrl-col">
+                <div class="ctrl-label">INTRO</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">depth</span>
+                    <button class="arr" onclick="step('rIDepth',-1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">◀</button>
+                    <input type="range" id="rIDepth" min="0" max="100" value="50"
+                           oninput="setVal('vIDepth',this.value); rain.configure({introDepth:+this.value})">
+                    <button class="arr" onclick="step('rIDepth',+1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">▶</button>
+                    <span class="val" id="vIDepth">50</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">speed</span>
+                    <button class="arr" onclick="step('rISpeed',-1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">◀</button>
+                    <input type="range" id="rISpeed" min="0" max="100" value="98"
+                           oninput="setVal('vISpeed',this.value); rain.configure({introSpeed:+this.value})">
+                    <button class="arr" onclick="step('rISpeed',+1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">▶</button>
+                    <span class="val" id="vISpeed">98</span>
+                </div>
+                <div class="ctrl-label" style="margin-top:0.3rem">FADE OUT (s)</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="step('rFade',-1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">◀</button>
+                    <input type="range" id="rFade" min="0" max="5" step="0.5" value="0"
+                           oninput="setVal('vFade',this.value); rain.configure({fadeOutDuration:+this.value})">
+                    <button class="arr" onclick="step('rFade',+1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">▶</button>
+                    <span class="val" id="vFade">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- BURST tab -->
+        <div id="tab-burst" class="tab-panel">
+            <div class="ctrl-col">
+                <div class="ctrl-label">DURATION (s)</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">min</span>
+                    <button class="arr" onclick="step('rBDMin',-1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">◀</button>
+                    <input type="range" id="rBDMin" min="1" max="20" value="3"
+                           oninput="setVal('vBDMin',this.value); rain.configure({burstDurationMin:+this.value})">
+                    <button class="arr" onclick="step('rBDMin',+1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">▶</button>
+                    <span class="val" id="vBDMin">3</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">max</span>
+                    <button class="arr" onclick="step('rBDMax',-1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">◀</button>
+                    <input type="range" id="rBDMax" min="1" max="30" value="7"
+                           oninput="setVal('vBDMax',this.value); rain.configure({burstDurationMax:+this.value})">
+                    <button class="arr" onclick="step('rBDMax',+1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">▶</button>
+                    <span class="val" id="vBDMax">7</span>
+                </div>
+            </div>
+            <div class="ctrl-col">
+                <div class="ctrl-label">INTERVAL (s)</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">min</span>
+                    <button class="arr" onclick="step('rBIMin',-1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">◀</button>
+                    <input type="range" id="rBIMin" min="1" max="300" value="30"
+                           oninput="setVal('vBIMin',this.value); rain.configure({burstIntervalMin:+this.value})">
+                    <button class="arr" onclick="step('rBIMin',+1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">▶</button>
+                    <span class="val" id="vBIMin">30</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">max</span>
+                    <button class="arr" onclick="step('rBIMax',-1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">◀</button>
+                    <input type="range" id="rBIMax" min="1" max="600" value="60"
+                           oninput="setVal('vBIMax',this.value); rain.configure({burstIntervalMax:+this.value})">
+                    <button class="arr" onclick="step('rBIMax',+1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">▶</button>
+                    <span class="val" id="vBIMax">60</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TIERS tab -->
+        <div id="tab-tiers" class="tab-panel">
+            <div class="ctrl-col">
+                <div class="ctrl-label">SPEED TIER WEIGHTS</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">fast (2)</span>
+                    <button class="arr" onclick="step('rT0',-1,'vT0',0,100,updateTiers)">◀</button>
+                    <input type="range" id="rT0" min="0" max="100" value="50" oninput="setVal('vT0',this.value); updateTiers()">
+                    <button class="arr" onclick="step('rT0',+1,'vT0',0,100,updateTiers)">▶</button>
+                    <span class="val" id="vT0">50</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">med (4)</span>
+                    <button class="arr" onclick="step('rT1',-1,'vT1',0,100,updateTiers)">◀</button>
+                    <input type="range" id="rT1" min="0" max="100" value="42" oninput="setVal('vT1',this.value); updateTiers()">
+                    <button class="arr" onclick="step('rT1',+1,'vT1',0,100,updateTiers)">▶</button>
+                    <span class="val" id="vT1">42</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">slow (10)</span>
+                    <button class="arr" onclick="step('rT2',-1,'vT2',0,100,updateTiers)">◀</button>
+                    <input type="range" id="rT2" min="0" max="100" value="4" oninput="setVal('vT2',this.value); updateTiers()">
+                    <button class="arr" onclick="step('rT2',+1,'vT2',0,100,updateTiers)">▶</button>
+                    <span class="val" id="vT2">4</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">v.slow (13)</span>
+                    <button class="arr" onclick="step('rT3',-1,'vT3',0,100,updateTiers)">◀</button>
+                    <input type="range" id="rT3" min="0" max="100" value="4" oninput="setVal('vT3',this.value); updateTiers()">
+                    <button class="arr" onclick="step('rT3',+1,'vT3',0,100,updateTiers)">▶</button>
+                    <span class="val" id="vT3">4</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- STYLE tab -->
+        <div id="tab-style" class="tab-panel">
+            <div class="ctrl-col">
+                <div class="ctrl-label">THEME</div>
+                <div class="btn-group">
+                    <button class="pill active" id="themeGreen" onclick="setTheme('green',this)">Green</button>
+                    <button class="pill" id="themeRed"   onclick="setTheme('red',this)">Red</button>
+                    <button class="pill" id="themeBlue"  onclick="setTheme('blue',this)">Blue</button>
+                    <button class="pill" id="themeWhite" onclick="setTheme('white',this)">White</button>
+                    <button class="pill" id="themeAmber" onclick="setTheme('amber',this)">Amber</button>
+                </div>
+            </div>
+            <div class="ctrl-col">
+                <div class="ctrl-label">CHARSET</div>
+                <div class="btn-group">
+                    <button class="pill active" id="charKatakana" onclick="setChars('katakana',this)">Katakana</button>
+                    <button class="pill" id="charBinary"  onclick="setChars('binary',this)">Binary</button>
+                    <button class="pill" id="charLatin"   onclick="setChars('latin',this)">Latin</button>
+                    <button class="pill" id="charBraille" onclick="setChars('braille',this)">Braille</button>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="sep"></div>
-
-    <!-- Drop speed + Dual frequency -->
-    <div class="ctrl-col">
-        <div class="sl-row">
-            <label style="width:4rem">SPEED</label>
-            <button class="arr" onclick="step('rSpeed',-1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">◀</button>
-            <input type="range" id="rSpeed" min="0" max="100" value="98"
-                   oninput="setVal('vSpeed',this.value); rain.configure({dropSpeed:+this.value})">
-            <button class="arr" onclick="step('rSpeed',+1,'vSpeed',0,100,v=>rain.configure({dropSpeed:v}))">▶</button>
-            <span class="val" id="vSpeed">98</span>
-        </div>
-        <div class="sl-row">
-            <label style="width:4rem">DUAL FREQ</label>
-            <button class="arr" onclick="step('rDual',-1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">◀</button>
-            <input type="range" id="rDual" min="0" max="100" value="50"
-                   oninput="setVal('vDual',this.value); rain.configure({dualFrequency:+this.value})">
-            <button class="arr" onclick="step('rDual',+1,'vDual',0,100,v=>rain.configure({dualFrequency:v}))">▶</button>
-            <span class="val" id="vDual">50</span>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Intro -->
-    <div class="ctrl-col">
-        <label>INTRO</label>
-        <div class="sl-row">
-            <span class="tier-label">depth</span>
-            <button class="arr" onclick="step('rIDepth',-1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">◀</button>
-            <input type="range" id="rIDepth" min="0" max="100" value="50"
-                   oninput="setVal('vIDepth',this.value); rain.configure({introDepth:+this.value})">
-            <button class="arr" onclick="step('rIDepth',+1,'vIDepth',0,100,v=>rain.configure({introDepth:v}))">▶</button>
-            <span class="val" id="vIDepth">50</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">speed</span>
-            <button class="arr" onclick="step('rISpeed',-1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">◀</button>
-            <input type="range" id="rISpeed" min="0" max="100" value="98"
-                   oninput="setVal('vISpeed',this.value); rain.configure({introSpeed:+this.value})">
-            <button class="arr" onclick="step('rISpeed',+1,'vISpeed',0,100,v=>rain.configure({introSpeed:v}))">▶</button>
-            <span class="val" id="vISpeed">98</span>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Speed tiers -->
-    <div class="ctrl-col">
-        <label>TIER WEIGHTS</label>
-        <div class="sl-row">
-            <span class="tier-label">fast (2)</span>
-            <button class="arr" onclick="step('rT0',-1,'vT0',0,100,updateTiers)">◀</button>
-            <input type="range" id="rT0" min="0" max="100" value="50" oninput="setVal('vT0',this.value); updateTiers()">
-            <button class="arr" onclick="step('rT0',+1,'vT0',0,100,updateTiers)">▶</button>
-            <span class="val" id="vT0">50</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">med (4)</span>
-            <button class="arr" onclick="step('rT1',-1,'vT1',0,100,updateTiers)">◀</button>
-            <input type="range" id="rT1" min="0" max="100" value="42" oninput="setVal('vT1',this.value); updateTiers()">
-            <button class="arr" onclick="step('rT1',+1,'vT1',0,100,updateTiers)">▶</button>
-            <span class="val" id="vT1">42</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">slow (10)</span>
-            <button class="arr" onclick="step('rT2',-1,'vT2',0,100,updateTiers)">◀</button>
-            <input type="range" id="rT2" min="0" max="100" value="4" oninput="setVal('vT2',this.value); updateTiers()">
-            <button class="arr" onclick="step('rT2',+1,'vT2',0,100,updateTiers)">▶</button>
-            <span class="val" id="vT2">4</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">v.slow (13)</span>
-            <button class="arr" onclick="step('rT3',-1,'vT3',0,100,updateTiers)">◀</button>
-            <input type="range" id="rT3" min="0" max="100" value="4" oninput="setVal('vT3',this.value); updateTiers()">
-            <button class="arr" onclick="step('rT3',+1,'vT3',0,100,updateTiers)">▶</button>
-            <span class="val" id="vT3">4</span>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Trail lengths -->
-    <div class="ctrl-col">
-        <label>TRAIL</label>
-        <div class="sl-row">
-            <span class="tier-label">short</span>
-            <button class="arr" onclick="step('rTF',-1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">◀</button>
-            <input type="range" id="rTF" min="5" max="100" value="28"
-                   oninput="setVal('vTF',this.value); rain.configure({trailLengthFast:+this.value})">
-            <button class="arr" onclick="step('rTF',+1,'vTF',5,100,v=>rain.configure({trailLengthFast:v}))">▶</button>
-            <span class="val" id="vTF">28</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">long</span>
-            <button class="arr" onclick="step('rTS',-1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">◀</button>
-            <input type="range" id="rTS" min="5" max="150" value="70"
-                   oninput="setVal('vTS',this.value); rain.configure({trailLengthSlow:+this.value})">
-            <button class="arr" onclick="step('rTS',+1,'vTS',5,150,v=>rain.configure({trailLengthSlow:v}))">▶</button>
-            <span class="val" id="vTS">70</span>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Burst -->
-    <div class="ctrl-col">
-        <label>BURST</label>
-        <div class="sl-row">
-            <span class="tier-label">dur min</span>
-            <button class="arr" onclick="step('rBDMin',-1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">◀</button>
-            <input type="range" id="rBDMin" min="1" max="20" value="3"
-                   oninput="setVal('vBDMin',this.value); rain.configure({burstDurationMin:+this.value})">
-            <button class="arr" onclick="step('rBDMin',+1,'vBDMin',1,20,v=>rain.configure({burstDurationMin:v}))">▶</button>
-            <span class="val" id="vBDMin">3</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">dur max</span>
-            <button class="arr" onclick="step('rBDMax',-1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">◀</button>
-            <input type="range" id="rBDMax" min="1" max="30" value="7"
-                   oninput="setVal('vBDMax',this.value); rain.configure({burstDurationMax:+this.value})">
-            <button class="arr" onclick="step('rBDMax',+1,'vBDMax',1,30,v=>rain.configure({burstDurationMax:v}))">▶</button>
-            <span class="val" id="vBDMax">7</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">every min</span>
-            <button class="arr" onclick="step('rBIMin',-1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">◀</button>
-            <input type="range" id="rBIMin" min="1" max="300" value="30"
-                   oninput="setVal('vBIMin',this.value); rain.configure({burstIntervalMin:+this.value})">
-            <button class="arr" onclick="step('rBIMin',+1,'vBIMin',1,300,v=>rain.configure({burstIntervalMin:v}))">▶</button>
-            <span class="val" id="vBIMin">30</span>
-        </div>
-        <div class="sl-row">
-            <span class="tier-label">every max</span>
-            <button class="arr" onclick="step('rBIMax',-1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">◀</button>
-            <input type="range" id="rBIMax" min="1" max="600" value="60"
-                   oninput="setVal('vBIMax',this.value); rain.configure({burstIntervalMax:+this.value})">
-            <button class="arr" onclick="step('rBIMax',+1,'vBIMax',1,600,v=>rain.configure({burstIntervalMax:v}))">▶</button>
-            <span class="val" id="vBIMax">60</span>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Theme -->
-    <div class="ctrl-col">
-        <label>THEME</label>
-        <div class="ctrl-group">
-            <button class="action active" id="themeGreen" onclick="setTheme('green',this)">Green</button>
-            <button class="action" id="themeRed"   onclick="setTheme('red',this)">Red</button>
-            <button class="action" id="themeBlue"  onclick="setTheme('blue',this)">Blue</button>
-            <button class="action" id="themeWhite" onclick="setTheme('white',this)">White</button>
-            <button class="action" id="themeAmber" onclick="setTheme('amber',this)">Amber</button>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Charset -->
-    <div class="ctrl-col">
-        <label>CHARSET</label>
-        <div class="ctrl-group">
-            <button class="action active" id="charKatakana" onclick="setChars('katakana',this)">Katakana</button>
-            <button class="action" id="charBinary" onclick="setChars('binary',this)">Binary</button>
-            <button class="action" id="charLatin"  onclick="setChars('latin',this)">Latin</button>
-            <button class="action" id="charBraille" onclick="setChars('braille',this)">Braille</button>
-        </div>
-    </div>
-
-    <div class="sep"></div>
-
-    <!-- Fade out + Presets -->
-    <div class="ctrl-col">
-        <div class="sl-row">
-            <label style="width:4rem">FADE OUT</label>
-            <button class="arr" onclick="step('rFade',-1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">◀</button>
-            <input type="range" id="rFade" min="0" max="5" step="0.5" value="0"
-                   oninput="setVal('vFade',this.value); rain.configure({fadeOutDuration:+this.value})">
-            <button class="arr" onclick="step('rFade',+1,'vFade',0,5,v=>rain.configure({fadeOutDuration:v}))">▶</button>
-            <span class="val" id="vFade">0</span>
-        </div>
-        <div class="ctrl-group" style="margin-top:0.2rem">
-            <label>PRESET</label>
-            <button class="action" onclick="applyPreset('default')">Default</button>
-            <button class="action" onclick="applyPreset('storm')">Storm</button>
-            <button class="action" onclick="applyPreset('ghost')">Ghost</button>
-            <button class="action" onclick="applyPreset('inferno')">Inferno</button>
-            <button class="action" onclick="applyPreset('amber')">Amber</button>
-        </div>
+    <!-- ── Toolbar ── -->
+    <div id="toolbar">
+        <button class="tb-btn" onclick="rain.start()">▶</button>
+        <button class="tb-btn" onclick="restartRain()">↺</button>
+        <button class="tb-btn" onclick="rain.stop()">■</button>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" id="burstToggle"        onclick="toggleBurst()">⚡ Burst</button>
+        <button class="tb-btn" id="tapToggle"          onclick="toggleTap()">👆 Tap</button>
+        <button class="tb-btn active" id="hideChildrenToggle" onclick="toggleHideChildren()">👁 Content</button>
+        <div class="tb-sep"></div>
+        <button class="tb-btn" onclick="randomizeAll()">⚄ Rnd</button>
+        <button class="tb-btn" id="tabToggle" onclick="toggleDrawer()">⚙ ▲</button>
     </div>
 
 </div>
@@ -414,133 +468,48 @@
         theme:           'green',
         fadeOutDuration: 0,
         on: {
-            start:          () => logEvent('▶ started'),
-            stop:           () => logEvent('■ stopped'),
-            introComplete:  () => logEvent('✓ intro done'),
-            burstStart:     (d) => logEvent(`⚡ burst col ${d.epicenter}`),
-            burstEnd:       () => logEvent('⚡ burst end'),
+            start:         () => logEvent('▶ started'),
+            stop:          () => logEvent('■ stopped'),
+            introComplete: () => logEvent('✓ intro done'),
+            burstStart:    (d) => logEvent(`⚡ burst col ${d.epicenter}`),
+            burstEnd:      () => logEvent('⚡ burst end'),
         },
     });
 
     rain.start();
 
-    // ── Event log ─────────────────────────────────────────────────────────
+    // ── Drawer / tabs ──────────────────────────────────────────────────────
+    let drawerOpen = false;
+    function toggleDrawer() {
+        drawerOpen = !drawerOpen;
+        document.getElementById('drawer').classList.toggle('open', drawerOpen);
+        document.getElementById('tabToggle').textContent = drawerOpen ? '⚙ ▼' : '⚙ ▲';
+    }
+
+    function showTab(name, btn) {
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.getElementById('tab-' + name).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    // ── Event log ──────────────────────────────────────────────────────────
     function logEvent(msg) {
         const log = document.getElementById('eventLog');
-        const el = document.createElement('div');
+        const el  = document.createElement('div');
         el.className = 'evt';
         el.textContent = msg;
         log.prepend(el);
         setTimeout(() => el.remove(), 3100);
     }
 
-    // ── Theme ──────────────────────────────────────────────────────────────
-    function setTheme(theme, btn) {
-        rain.configure({ theme });
-        rain.stop(); rain.start();
-        document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    }
-
-    // ── Charset ────────────────────────────────────────────────────────────
-    function setChars(key, btn) {
-        rain.configure({ chars: CHARSETS[key] });
-        document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    }
-
-    // ── Presets ────────────────────────────────────────────────────────────
-    function applyPreset(name) {
-        const p = DigitalRain.preset(name);
-        rain.configure(p);
-        rain.stop(); rain.start();
-        // Sync sliders to preset values
-        const s = (id, valId, v) => { const el = document.getElementById(id); if(el){ el.value=v; setVal(valId,v); } };
-        if (p.dropSpeed       != null) s('rSpeed',  'vSpeed',  p.dropSpeed);
-        if (p.dualFrequency   != null) s('rDual',   'vDual',   p.dualFrequency);
-        if (p.introDepth      != null) s('rIDepth', 'vIDepth', p.introDepth);
-        if (p.introSpeed      != null) s('rISpeed', 'vISpeed', p.introSpeed);
-        if (p.trailLengthFast != null) s('rTF',     'vTF',     p.trailLengthFast);
-        if (p.trailLengthSlow != null) s('rTS',     'vTS',     p.trailLengthSlow);
-        if (p.fadeOutDuration != null) s('rFade',   'vFade',   p.fadeOutDuration);
-        if (p.burstDurationMin!= null) s('rBDMin',  'vBDMin',  p.burstDurationMin);
-        if (p.burstDurationMax!= null) s('rBDMax',  'vBDMax',  p.burstDurationMax);
-        if (p.burstIntervalMin!= null) s('rBIMin',  'vBIMin',  p.burstIntervalMin);
-        if (p.burstIntervalMax!= null) s('rBIMax',  'vBIMax',  p.burstIntervalMax);
-        // Sync theme buttons
-        if (p.theme) {
-            document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
-            const tb = document.getElementById('theme' + p.theme.charAt(0).toUpperCase() + p.theme.slice(1));
-            if (tb) tb.classList.add('active');
-        }
-    }
-
-    // ── Randomize ──────────────────────────────────────────────────────────
-    function randomizeAll() {
-        function rInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-        function setSlider(id, valId, val) {
-            const el = document.getElementById(id);
-            el.value = val;
-            setVal(valId, val);
-        }
-
-        const dualFreq = rInt(0, 100);
-        setSlider('rDual', 'vDual', dualFreq);
-        rain.configure({ dualFrequency: dualFreq });
-
-        const introDepth = rInt(0, 100);
-        setSlider('rIDepth', 'vIDepth', introDepth);
-        rain.configure({ introDepth });
-
-        const trailFast = rInt(5, 100);
-        setSlider('rTF', 'vTF', trailFast);
-        rain.configure({ trailLengthFast: trailFast });
-
-        const trailSlow = rInt(trailFast, 150);
-        setSlider('rTS', 'vTS', trailSlow);
-        rain.configure({ trailLengthSlow: trailSlow });
-
-        const t0 = rInt(0, 100), t1 = rInt(0, 100), t2 = rInt(0, 60), t3 = rInt(0, 60);
-        setSlider('rT0', 'vT0', t0);
-        setSlider('rT1', 'vT1', t1);
-        setSlider('rT2', 'vT2', t2);
-        setSlider('rT3', 'vT3', t3);
-        rain.configure({ speedTiers: [
-                { frameSkip: 2,  weight: t0 },
-                { frameSkip: 4,  weight: t1 },
-                { frameSkip: 10, weight: t2 },
-                { frameSkip: 13, weight: t3 },
-            ]});
-
-        const burstDurMin = rInt(1, 15);
-        const burstDurMax = rInt(burstDurMin, 20);
-        const burstIntMin = rInt(1, 120);
-        const burstIntMax = rInt(burstIntMin, 300);
-        setSlider('rBDMin', 'vBDMin', burstDurMin);
-        setSlider('rBDMax', 'vBDMax', burstDurMax);
-        setSlider('rBIMin', 'vBIMin', burstIntMin);
-        setSlider('rBIMax', 'vBIMax', burstIntMax);
-        rain.configure({
-            burstDurationMin: burstDurMin,
-            burstDurationMax: burstDurMax,
-            burstIntervalMin: burstIntMin,
-            burstIntervalMax: burstIntMax,
-        });
-
-        restartRain();
-    }
-
-    function restartRain() {
-        rain.stop();
-        rain.start();
-    }
-
-    function setVal(id, v) { document.getElementById(id).textContent = v; }
+    // ── Playback ───────────────────────────────────────────────────────────
+    function restartRain() { rain.stop(); rain.start(); }
 
     function toggleBurst() {
-        const on  = !rain._cfg.burst;
+        const on = !rain._cfg.burst;
         rain.configure({ burst: on });
-        document.getElementById('burstToggle').textContent = `⚡ Burst: ${on ? 'On' : 'Off'}`;
+        document.getElementById('burstToggle').classList.toggle('active', on);
     }
 
     function toggleTap() {
@@ -555,24 +524,61 @@
             rain._canvas.removeEventListener('click',      rain._boundTap);
             rain._canvas.removeEventListener('touchstart', rain._boundTap);
         }
-        document.getElementById('tapToggle').textContent = `👆 Tap: ${on ? 'On' : 'Off'}`;
+        document.getElementById('tapToggle').classList.toggle('active', on);
     }
 
     function toggleHideChildren() {
         const on = !rain._cfg.hideChildren;
-        if (!on) {
-            // Turning OFF: restore children first via stop, then restart without hiding
-            rain.configure({ hideChildren: false });
-            rain.stop();
-            rain.start();
-        } else {
-            // Turning ON: configure then restart — _mount will hide children
-            rain.configure({ hideChildren: true });
-            rain.stop();
-            rain.start();
-        }
-        document.getElementById('hideChildrenToggle').textContent = `🙈 Hide Content: ${on ? 'On' : 'Off'}`;
+        rain.configure({ hideChildren: on });
+        rain.stop();
+        rain.start();
+        // glow (active) = content visible = hideChildren is OFF
+        document.getElementById('hideChildrenToggle').classList.toggle('active', !on);
     }
+
+    // ── Style ──────────────────────────────────────────────────────────────
+    function setTheme(theme, btn) {
+        rain.configure({ theme });
+        rain.stop(); rain.start();
+        document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    function setChars(key, btn) {
+        rain.configure({ chars: CHARSETS[key] });
+        document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // ── Randomize ──────────────────────────────────────────────────────────
+    function randomizeAll() {
+        function rInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+        function setSlider(id, valId, val) { const el = document.getElementById(id); el.value = val; setVal(valId, val); }
+
+        const dualFreq   = rInt(0, 100);          setSlider('rDual',   'vDual',   dualFreq);   rain.configure({ dualFrequency: dualFreq });
+        const introDepth = rInt(0, 100);           setSlider('rIDepth', 'vIDepth', introDepth); rain.configure({ introDepth });
+        const trailFast  = rInt(5, 100);           setSlider('rTF',     'vTF',     trailFast);  rain.configure({ trailLengthFast: trailFast });
+        const trailSlow  = rInt(trailFast, 150);   setSlider('rTS',     'vTS',     trailSlow);  rain.configure({ trailLengthSlow: trailSlow });
+
+        const t0 = rInt(0,100), t1 = rInt(0,100), t2 = rInt(0,60), t3 = rInt(0,60);
+        setSlider('rT0','vT0',t0); setSlider('rT1','vT1',t1);
+        setSlider('rT2','vT2',t2); setSlider('rT3','vT3',t3);
+        rain.configure({ speedTiers: [
+                { frameSkip: 2,  weight: t0 }, { frameSkip: 4,  weight: t1 },
+                { frameSkip: 10, weight: t2 }, { frameSkip: 13, weight: t3 },
+            ]});
+
+        const bdMin = rInt(1,15),  bdMax = rInt(bdMin,20);
+        const biMin = rInt(1,120), biMax = rInt(biMin,300);
+        setSlider('rBDMin','vBDMin',bdMin); setSlider('rBDMax','vBDMax',bdMax);
+        setSlider('rBIMin','vBIMin',biMin); setSlider('rBIMax','vBIMax',biMax);
+        rain.configure({ burstDurationMin: bdMin, burstDurationMax: bdMax, burstIntervalMin: biMin, burstIntervalMax: biMax });
+
+        restartRain();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function setVal(id, v) { document.getElementById(id).textContent = v; }
 
     function step(sliderId, delta, valId, min, max, callback) {
         const el  = document.getElementById(sliderId);
@@ -590,6 +596,10 @@
                 { frameSkip: 13, weight: +document.getElementById('rT3').value },
             ]});
     }
+
+    // Sync initial toggle states
+    document.getElementById('burstToggle').classList.toggle('active', rain._cfg.burst);
+    document.getElementById('tapToggle').classList.toggle('active',   rain._cfg.tapToBurst);
 </script>
 </body>
 </html>
