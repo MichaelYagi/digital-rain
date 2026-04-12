@@ -1,10 +1,68 @@
 /**
- * digital-rain.js
- * Digital rain with concentric ripple burst effects.
- * Only the container is required. Everything else is optional.
+ * @fileoverview digital-rain.js
+ * Digital rain with lightning burst effects, color themes, event callbacks, and live configuration.
+ * No dependencies. Single file.
+ *
+ * @example
+ * // Minimal usage
+ * new DigitalRain('#container').start();
+ *
+ * @example
+ * // With options
+ * const rain = new DigitalRain('#container', {
+ *   theme: 'blue',
+ *   dropSpeed: 80,
+ *   tapToBurst: true,
+ * });
+ * rain.start();
  */
 
+/**
+ * Digital rain animation controller.
+ *
+ * @class
+ */
 class DigitalRain {
+    /**
+     * Create a DigitalRain instance.
+     *
+     * @param {string|Element} container - CSS selector or DOM element to render into.
+     * @param {object}         [options] - Configuration options. See {@link DigitalRain.OPTIONS}.
+     *
+     * @param {number}  [options.startDelay=0]          - Seconds before rain begins.
+     * @param {number}  [options.fontSize=14]            - px — controls column width and row height.
+     * @param {string}  [options.bgColor='#050505']      - Background fill color.
+     * @param {number}  [options.glowAlpha=0.6]          - Glow intensity on stream heads (0–1).
+     * @param {string}  [options.fontFamily]             - CSS font-family string.
+     * @param {string}  [options.chars]                  - Character pool; each char used with equal probability.
+     * @param {string}  [options.theme='green']          - Named theme ('green'|'red'|'blue'|'white'|'amber'),
+     *                                                     hex color ('#ff00ff', '#0cf'), or any CSS color name.
+     * @param {number}  [options.opacity=1]              - Canvas opacity (0–1).
+     * @param {number}  [options.density=100]            - Fraction of columns active (0–100).
+     * @param {string}  [options.direction='down']       - Drop direction: 'down' | 'up'.
+     * @param {number}  [options.dropSpeed=98]           - 0=frozen, 1=barely moving, 100=fastest.
+     * @param {Array}   [options.speedTiers]             - Weighted speed tier array: [{frameSkip, weight}].
+     * @param {number}  [options.trailLengthFast=28]     - Trail length for fastest columns.
+     * @param {number}  [options.trailLengthSlow=70]     - Trail length for slowest columns.
+     * @param {number}  [options.dualFrequency=50]       - 0=never, 100=very frequent dual streams.
+     * @param {number}  [options.dualMinGap=10]          - Min row gap between dual streams.
+     * @param {boolean} [options.burst=true]             - Enable automatic lightning bursts.
+     * @param {number}  [options.burstDurationMin=10]    - Min burst duration in seconds.
+     * @param {number}  [options.burstDurationMax=18]    - Max burst duration in seconds.
+     * @param {number}  [options.burstIntervalMin=30]    - Min seconds between bursts.
+     * @param {number}  [options.burstIntervalMax=60]    - Max seconds between bursts.
+     * @param {number}  [options.burstFirstMin=20]       - Min seconds before first burst.
+     * @param {number}  [options.burstFirstMax=40]       - Max seconds before first burst.
+     * @param {number}  [options.burstWidth=10]          - Row half-width of the bolt (Gaussian falloff).
+     * @param {number}  [options.burstReach=140]         - Column reach of the bolt left/right.
+     * @param {number}  [options.burstAngle=0.25]        - Row drift per column (bolt steepness).
+     * @param {boolean} [options.tapToBurst=false]       - Click/tap canvas to trigger burst.
+     * @param {boolean} [options.hideChildren=false]     - Hide container children on start, restore on stop.
+     * @param {number}  [options.fadeOutDuration=0]      - Seconds to fade canvas before unmounting on stop.
+     * @param {number}  [options.introDepth=50]          - Pioneer drop depth: 0=off, 50=halfway, 100=full.
+     * @param {number}  [options.introSpeed=98]          - Pioneer drop speed (0–100), independent of dropSpeed.
+     * @param {object}  [options.on={}]                  - Event callbacks. See {@link DigitalRain#on}.
+     */
     constructor(container, options = {}) {
         this._el = typeof container === 'string'
             ? document.querySelector(container) : container;
@@ -49,6 +107,11 @@ class DigitalRain {
         this._onResize = this._handleResize.bind(this);
     }
 
+    /**
+     * Mount the canvas and start the animation. Respects `startDelay`.
+     * No-op if already running.
+     * @returns {void}
+     */
     start() {
         if (this._running) return;
         this._running = true;
@@ -57,6 +120,11 @@ class DigitalRain {
         else        this._mount();
     }
 
+    /**
+     * Stop the animation, remove the canvas, and restore hidden children.
+     * Respects `fadeOutDuration`. No-op if not running.
+     * @returns {void}
+     */
     stop() {
         if (!this._running) return;
         this._running = false;
@@ -85,17 +153,38 @@ class DigitalRain {
         }
     }
 
+    /** Alias for {@link DigitalRain#stop}. */
     destroy() { this.stop(); }
 
+    /**
+     * Returns true if the animation has been started and not yet stopped.
+     * Returns true even while paused.
+     * @returns {boolean}
+     */
     isRunning() { return this._running; }
+
+    /**
+     * Returns true if the animation is currently paused.
+     * @returns {boolean}
+     */
     isPaused()  { return this._paused; }
 
+    /**
+     * Returns a shallow clone of the current configuration.
+     * Event callbacks (`on`) are excluded.
+     * @returns {object}
+     */
     getConfig() {
         const cfg = Object.assign({}, this._cfg);
-        delete cfg.on; // omit callbacks — not serialisable or useful to inspect
+        delete cfg.on;
         return cfg;
     }
 
+    /**
+     * Freeze the animation in place. The canvas stays visible and all state
+     * is preserved. No-op if not running or already paused.
+     * @returns {void}
+     */
     pause() {
         if (!this._running || this._paused) return;
         this._paused = true;
@@ -103,6 +192,10 @@ class DigitalRain {
         this._emit('pause');
     }
 
+    /**
+     * Unfreeze a paused animation. If not running at all, falls back to start().
+     * @returns {void}
+     */
     resume() {
         if (!this._running) { this.start(); return; }
         if (!this._paused) return;
@@ -111,6 +204,13 @@ class DigitalRain {
         this._emit('resume');
     }
 
+    /**
+     * Register an event callback. Overwrites any existing handler for that event.
+     * Events: 'start' | 'stop' | 'pause' | 'resume' | 'introComplete' | 'burstStart' | 'burstEnd'
+     * @param {string}   event - Event name.
+     * @param {Function} fn    - Callback. burstStart receives `{ epicenter }` (column index).
+     * @returns {DigitalRain} this — for chaining.
+     */
     on(event, fn) {
         if (!this._cfg.on) this._cfg.on = {};
         this._cfg.on[event] = fn;
@@ -122,6 +222,11 @@ class DigitalRain {
         if (typeof fn === 'function') try { fn(data); } catch(e) {}
     }
 
+    /**
+     * Manually fire a lightning burst.
+     * @param {number} [col] - Column index for the burst epicenter. Random if omitted.
+     * @returns {void}
+     */
     triggerBurst(col) {
         if (!this._cfg.burst || !this._cols.length) return;
         const cfg = this._cfg;
@@ -174,6 +279,14 @@ class DigitalRain {
         return jag;
     }
 
+    /**
+     * Update one or more options live — no restart needed for most changes.
+     * `chars` and `theme` take effect immediately.
+     * `density` and `direction` reinitialise columns immediately.
+     * `opacity` updates the canvas style immediately.
+     * @param {object} options - Partial options object. Same keys as constructor options.
+     * @returns {void}
+     */
     configure(o) {
         const prevSpeed     = this._cfg.dropSpeed;
         const prevChars     = this._cfg.chars;
@@ -872,5 +985,119 @@ class DigitalRain {
         }
 
         this._rafId = requestAnimationFrame(this._boundDraw);
+    }
+
+    // ── Static inspection ─────────────────────────────────────────────────
+
+    /**
+     * All supported configuration options with type, default value, and description.
+     * Useful for runtime inspection and building tooling on top of the library.
+     * @type {Object.<string, {type: string, default: *, description: string}>}
+     */
+    static get OPTIONS() {
+        return {
+            startDelay:       { type: 'number',  default: 0,       description: 'Seconds before rain begins' },
+            fontSize:         { type: 'number',  default: 14,      description: 'px — controls column width and row height' },
+            bgColor:          { type: 'string',  default: '#050505', description: 'Background fill color' },
+            glowAlpha:        { type: 'number',  default: 0.6,     description: 'Glow intensity on stream heads (0–1)' },
+            fontFamily:       { type: 'string',  default: '"Share Tech Mono", "Courier New", monospace', description: 'CSS font-family string' },
+            chars:            { type: 'string',  default: 'アイ...ABCDEF', description: 'Character pool; each char sampled with equal probability' },
+            theme:            { type: 'string',  default: 'green', description: "Named theme ('green'|'red'|'blue'|'white'|'amber'), hex color, or any CSS color name" },
+            opacity:          { type: 'number',  default: 1,       description: 'Canvas opacity (0–1)' },
+            density:          { type: 'number',  default: 100,     description: 'Fraction of columns active (0–100)' },
+            direction:        { type: 'string',  default: 'down',  description: "Drop direction: 'down' | 'up'" },
+            dropSpeed:        { type: 'number',  default: 98,      description: '0=frozen, 1=barely moving, 100=fastest' },
+            speedTiers:       { type: 'Array',   default: '[...]', description: 'Weighted speed tiers: [{frameSkip, weight}]' },
+            trailLengthFast:  { type: 'number',  default: 28,      description: 'Trail length for fastest columns' },
+            trailLengthSlow:  { type: 'number',  default: 70,      description: 'Trail length for slowest columns' },
+            dualFrequency:    { type: 'number',  default: 50,      description: '0=never, 100=very frequent dual streams per column' },
+            dualMinGap:       { type: 'number',  default: 10,      description: 'Min row gap between dual streams in same column' },
+            burst:            { type: 'boolean', default: true,    description: 'Enable automatic lightning bursts' },
+            burstDurationMin: { type: 'number',  default: 10,      description: 'Min burst duration (seconds)' },
+            burstDurationMax: { type: 'number',  default: 18,      description: 'Max burst duration (seconds)' },
+            burstIntervalMin: { type: 'number',  default: 30,      description: 'Min seconds between bursts' },
+            burstIntervalMax: { type: 'number',  default: 60,      description: 'Max seconds between bursts' },
+            burstFirstMin:    { type: 'number',  default: 20,      description: 'Min seconds before first burst' },
+            burstFirstMax:    { type: 'number',  default: 40,      description: 'Max seconds before first burst' },
+            burstWidth:       { type: 'number',  default: 10,      description: 'Row half-width of the bolt (Gaussian falloff)' },
+            burstReach:       { type: 'number',  default: 140,     description: 'Column reach of the bolt left/right' },
+            burstAngle:       { type: 'number',  default: 0.25,    description: 'Row drift per column (bolt steepness)' },
+            tapToBurst:       { type: 'boolean', default: false,   description: 'Click/tap canvas to trigger burst at that position' },
+            hideChildren:     { type: 'boolean', default: false,   description: 'Hide container children on start, restore on stop' },
+            fadeOutDuration:  { type: 'number',  default: 0,       description: 'Seconds to fade canvas before unmounting on stop (0 = instant)' },
+            introDepth:       { type: 'number',  default: 50,      description: 'Pioneer drop depth: 0=off, 50=halfway, 100=full height' },
+            introSpeed:       { type: 'number',  default: 98,      description: 'Pioneer drop speed (0–100), independent of dropSpeed' },
+            on:               { type: 'object',  default: '{}',    description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd }' },
+        };
+    }
+
+    /**
+     * Print a formatted reference of all options and public methods to the console.
+     * Call from the browser console: `DigitalRain.help()`
+     * @returns {void}
+     */
+    static help() {
+        const c = {
+            title:   'color: #00ff41; font-weight: bold; font-size: 1.1em',
+            head:    'color: #00ff41; font-weight: bold',
+            key:     'color: #00cfff',
+            type:    'color: #ffaa00',
+            def:     'color: #aaaaaa',
+            desc:    'color: #cccccc',
+            method:  'color: #ff79c6; font-weight: bold',
+            sig:     'color: #aaaaaa',
+            reset:   'color: inherit',
+        };
+
+        console.log('%cDigitalRain', c.title);
+        console.log('%cdigital-rain.js — no dependencies, single file', c.def);
+        console.log(' ');
+
+        // ── Options ───────────────────────────────────────────────────────
+        console.log('%c── OPTIONS ─────────────────────────────────────────', c.head);
+        console.log('%cnew DigitalRain(container, options)', c.sig);
+        console.log(' ');
+
+        const opts = DigitalRain.OPTIONS;
+        const keyW = Math.max(...Object.keys(opts).map(k => k.length));
+        for (const [key, meta] of Object.entries(opts)) {
+            const pad = ' '.repeat(keyW - key.length);
+            console.log(
+                `  %c${key}${pad}%c  ${meta.type.padEnd(8)}%c  default: ${String(meta.default).slice(0,20).padEnd(22)}%c  ${meta.description}`,
+                c.key, c.type, c.def, c.desc
+            );
+        }
+
+        console.log(' ');
+
+        // ── Methods ───────────────────────────────────────────────────────
+        console.log('%c── METHODS ─────────────────────────────────────────', c.head);
+        const methods = [
+            ['start()',           'Mount canvas and begin. Respects startDelay. No-op if already running.'],
+            ['stop()',            'Stop, remove canvas, restore hidden children. Respects fadeOutDuration.'],
+            ['destroy()',         'Alias for stop().'],
+            ['pause()',           'Freeze animation in place. Canvas stays, state preserved.'],
+            ['resume()',          'Unfreeze. Falls back to start() if not yet running.'],
+            ['isRunning()',       'Returns true if started and not stopped (includes paused).'],
+            ['isPaused()',        'Returns true if currently paused.'],
+            ['getConfig()',       'Shallow clone of current config (callbacks excluded).'],
+            ['configure(opts)',   'Update options live — no restart needed for most changes.'],
+            ['triggerBurst(col?)','Fire a burst manually. col = column index, omit for random.'],
+            ['on(event, fn)',     "Register event callback: 'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'"],
+        ];
+        const mW = Math.max(...methods.map(([m]) => m.length));
+        for (const [sig, desc] of methods) {
+            const pad = ' '.repeat(mW - sig.length);
+            console.log(`  %c${sig}${pad}%c  ${desc}`, c.method, c.desc);
+        }
+
+        console.log(' ');
+
+        // ── Static ────────────────────────────────────────────────────────
+        console.log('%c── STATIC ──────────────────────────────────────────', c.head);
+        console.log(`  %cDigitalRain.OPTIONS%c  All options with type, default, and description.`, c.method, c.desc);
+        console.log(`  %cDigitalRain.DEFAULTS%c All default option values.`, c.method, c.desc);
+        console.log(`  %cDigitalRain.help()%c   Print this reference.`, c.method, c.desc);
+        console.log(' ');
     }
 }
