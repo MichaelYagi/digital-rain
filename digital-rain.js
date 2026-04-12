@@ -87,6 +87,15 @@ class DigitalRain {
 
     destroy() { this.stop(); }
 
+    isRunning() { return this._running; }
+    isPaused()  { return this._paused; }
+
+    getConfig() {
+        const cfg = Object.assign({}, this._cfg);
+        delete cfg.on; // omit callbacks — not serialisable or useful to inspect
+        return cfg;
+    }
+
     pause() {
         if (!this._running || this._paused) return;
         this._paused = true;
@@ -100,15 +109,6 @@ class DigitalRain {
         this._paused = false;
         this._rafId = requestAnimationFrame(this._boundDraw);
         this._emit('resume');
-    }
-
-    snapshot() {
-        return JSON.parse(JSON.stringify(this._cfg));
-    }
-
-    restore(snap) {
-        if (!snap || typeof snap !== 'object') return;
-        this.configure(snap);
     }
 
     on(event, fn) {
@@ -175,16 +175,26 @@ class DigitalRain {
     }
 
     configure(o) {
-        const prevSpeed = this._cfg.dropSpeed;
-        const prevChars = this._cfg.chars;
+        const prevSpeed     = this._cfg.dropSpeed;
+        const prevChars     = this._cfg.chars;
+        const prevDensity   = this._cfg.density;
+        const prevDirection = this._cfg.direction;
         Object.assign(this._cfg, o);
         if (o.chars !== undefined && o.chars !== prevChars) {
             this._CHARS = this._cfg.chars.split('');
         }
         if (this._canvas) {
             this._computeCached();
+            // Live opacity update
+            if (o.opacity !== undefined) {
+                this._canvas.style.opacity = this._cfg.opacity;
+            }
+            // Density or direction change — reinit columns
+            if ((o.density !== undefined && o.density !== prevDensity) ||
+                (o.direction !== undefined && o.direction !== prevDirection)) {
+                this._initColumns();
+            }
             // If dropSpeed changed, recompute speed/steps on all existing streams
-            // so frozen streams (speed=999) wake up immediately
             if (o.dropSpeed !== undefined && o.dropSpeed !== prevSpeed) {
                 for (const col of this._cols) {
                     for (const st of col.streams) {
@@ -249,6 +259,15 @@ class DigitalRain {
 
             // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber'
             theme:          'green',
+
+            // Canvas opacity (0–1)
+            opacity:        1,
+
+            // Fraction of columns that are active (0–100)
+            density:        100,
+
+            // Drop direction: 'down' | 'up'
+            direction:      'down',
 
             // Fade-out duration in seconds when stop() is called (0 = instant)
             fadeOutDuration: 0,
@@ -442,6 +461,7 @@ class DigitalRain {
             position: 'absolute', top: '0', left: '0',
             width: '100%', height: '100%',
             pointerEvents: 'none', zIndex: '9999',
+            opacity: cfg.opacity != null ? cfg.opacity : 1,
         });
 
         el.appendChild(this._canvas);
@@ -515,10 +535,13 @@ class DigitalRain {
     }
 
     _initColumns() {
-        const n = Math.floor(this._canvas.width / this._cfg.fontSize);
-        this._cols = Array.from({ length: n }, () => ({
+        const n       = Math.floor(this._canvas.width / this._cfg.fontSize);
+        const density = this._cfg.density != null ? Math.max(0, Math.min(100, this._cfg.density)) : 100;
+        const center  = Math.floor(n / 2);
+        this._cols = Array.from({ length: n }, (_, i) => ({
             streams:  [ this._makeStream(this._booting ? 999999 : 60) ],
             spawnCD:  this._dualCooldown(),
+            dormant:  (this._booting && i === center) ? false : Math.random() * 100 >= density,
             mapA:     Object.create(null),
             mapB:     Object.create(null),
             useA:     true,
@@ -553,6 +576,7 @@ class DigitalRain {
         if (this._booting && this._bootStream) {
             const bs      = this._bootStream;
             const centerX = Math.floor(numCols / 2) * fw;
+            const dirUp   = cfg.direction === 'up';
 
             if (fc % bs.speed === 0) {
                 const char = CHARS[Math.random() * CHARS.length | 0];
@@ -566,8 +590,9 @@ class DigitalRain {
 
             ctx.font = this._fontStr;
             for (let t = 0; t < bs.trails.length; t++) {
-                const e  = bs.trails[t];
-                const cy = e.row * fw;
+                const e   = bs.trails[t];
+                const row = dirUp ? (maxRow - 1 - e.row) : e.row;
+                const cy  = row * fw;
                 ctx.fillStyle = bgColor;
                 ctx.fillRect(centerX, cy, fw, fw);
                 const isHead = (t === bs.trails.length - 1);
@@ -594,6 +619,7 @@ class DigitalRain {
                     delay: 0, trails: bs.trails.slice(), active: true, suppressTicks: 0,
                 };
                 this._cols[centerCol].streams[0] = liveStream;
+                this._cols[centerCol].dormant = false; // ensure pioneer continues regardless of density
                 this._bootStream = null;
                 if (cfg.burst) {
                     this._nextBurstFrame = fc + Math.round(
@@ -643,13 +669,15 @@ class DigitalRain {
         const decay          = lightningDecay;
 
         ctx.font = this._fontStr; // set once per frame
-        const greenLUT   = this._greenLUT;
+        const greenLUT    = this._greenLUT;
         const themeColors = this._themeColors;
-        const glowLUT    = `${themeColors.glow}${cfg.glowAlpha})`;
+        const glowLUT     = `${themeColors.glow}${cfg.glowAlpha})`;
         const [bR, bG, bB] = themeColors.burst;
+        const dirUp       = cfg.direction === 'up';
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
+            if (col.dormant) continue; // density skip
             const x   = i * fw;
 
             // ── Lightning intensity (column-level, no per-entry row calc yet) ──
@@ -770,8 +798,9 @@ class DigitalRain {
                 const headIdx = st.active ? trails.length - 1 : -1;
 
                 for (let t = 0; t < trails.length; t++) {
-                    const e  = trails[t];
-                    const cy = e.row * fw;
+                    const e   = trails[t];
+                    const row = dirUp ? (maxRow - 1 - e.row) : e.row;
+                    const cy  = row * fw;
 
                     // Per-entry lightning intensity — row falloff around jagged bolt path
                     let bIntens = 0;

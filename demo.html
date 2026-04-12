@@ -310,6 +310,25 @@
                     <span class="val" id="vFade">0</span>
                 </div>
             </div>
+
+            <div class="ctrl-col">
+                <div class="ctrl-label">OPACITY</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="stepF('rOpacity',-0.05,'vOpacity',0,1,v=>rain.configure({opacity:v}))">◀</button>
+                    <input type="range" id="rOpacity" min="0" max="1" step="0.05" value="1"
+                           oninput="setVal('vOpacity',parseFloat(this.value).toFixed(2)); rain.configure({opacity:+this.value})">
+                    <button class="arr" onclick="stepF('rOpacity',+0.05,'vOpacity',0,1,v=>rain.configure({opacity:v}))">▶</button>
+                    <span class="val" id="vOpacity">1</span>
+                </div>
+                <div class="ctrl-label" style="margin-top:0.3rem">DENSITY</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="step('rDensity',-1,'vDensity',0,100,v=>rain.configure({density:v}))">◀</button>
+                    <input type="range" id="rDensity" min="0" max="100" value="100"
+                           oninput="setVal('vDensity',this.value); rain.configure({density:+this.value})">
+                    <button class="arr" onclick="step('rDensity',+1,'vDensity',0,100,v=>rain.configure({density:v}))">▶</button>
+                    <span class="val" id="vDensity">100</span>
+                </div>
+            </div>
         </div>
 
         <!-- BURST tab -->
@@ -410,6 +429,13 @@
                     <button class="pill" id="charBraille" onclick="setChars('braille',this)">Braille</button>
                 </div>
             </div>
+            <div class="ctrl-col">
+                <div class="ctrl-label">DIRECTION</div>
+                <div class="btn-group">
+                    <button class="pill active" id="dirDown" onclick="setDirection('down',this)">↓ Down</button>
+                    <button class="pill" id="dirUp" onclick="setDirection('up',this)">↑ Up</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -500,25 +526,25 @@
     // ── Playback ───────────────────────────────────────────────────────────
     function updatePlayBtn() {
         const btn = document.getElementById('playToggle');
-        btn.textContent = (rain._running && !rain._paused) ? '⏸' : '▶';
+        btn.textContent = (rain.isRunning() && !rain.isPaused()) ? '⏸' : '▶';
     }
 
     function togglePlay() {
-        if (!rain._running)   { rain.start();  return; }
-        if (rain._paused)     { rain.resume(); return; }
+        if (!rain.isRunning())  { rain.start();  return; }
+        if (rain.isPaused())    { rain.resume(); return; }
         rain.pause();
     }
 
     function restartRain() { rain.stop(); rain.start(); }
 
     function toggleBurst() {
-        const on = !rain._cfg.burst;
+        const on = !rain.getConfig().burst;
         rain.configure({ burst: on });
         document.getElementById('burstToggle').classList.toggle('active', on);
     }
 
     function toggleTap() {
-        const on = !rain._cfg.tapToBurst;
+        const on = !rain.getConfig().tapToBurst;
         rain.configure({ tapToBurst: on });
         if (on) {
             rain._canvas.style.pointerEvents = 'auto';
@@ -533,11 +559,10 @@
     }
 
     function toggleHideChildren() {
-        const on = !rain._cfg.hideChildren;
+        const on = !rain.getConfig().hideChildren;
         rain.configure({ hideChildren: on });
         rain.stop();
         rain.start();
-        // glow (active) = content visible = hideChildren is OFF
         document.getElementById('hideChildrenToggle').classList.toggle('active', !on);
     }
 
@@ -553,6 +578,21 @@
         rain.configure({ chars: CHARSETS[key] });
         document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+    }
+
+    function setDirection(dir, btn) {
+        rain.configure({ direction: dir });
+        document.querySelectorAll('[id^=dir]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    // stepF: like step() but for float sliders
+    function stepF(sliderId, delta, valId, min, max, callback) {
+        const el  = document.getElementById(sliderId);
+        const val = Math.min(max, Math.max(min, Math.round((+el.value + delta) * 100) / 100));
+        el.value  = val;
+        setVal(valId, val.toFixed(2));
+        callback(val);
     }
 
     // ── Randomize ──────────────────────────────────────────────────────────
@@ -603,8 +643,8 @@
     }
 
     // Sync initial toggle states
-    document.getElementById('burstToggle').classList.toggle('active', rain._cfg.burst);
-    document.getElementById('tapToggle').classList.toggle('active',   rain._cfg.tapToBurst);
+    document.getElementById('burstToggle').classList.toggle('active', rain.getConfig().burst);
+    document.getElementById('tapToggle').classList.toggle('active',   rain.getConfig().tapToBurst);
     updatePlayBtn();
 </script>
 </body>

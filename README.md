@@ -61,6 +61,16 @@ new DigitalRain('#container', {
     // Unrecognised values log a console warning and fall back to green.
     theme:            'green',
 
+    // Canvas opacity (0–1) — useful for layering rain behind other content
+    opacity:          1,
+
+    // Fraction of columns that are active (0–100)
+    // Lower values create a sparser, more spread-out look
+    density:          100,
+
+    // Drop direction: 'down' | 'up'
+    direction:        'down',
+
     // ── Speed ─────────────────────────────────────────────────────────────
     dropSpeed:        98,     // 0=frozen, 1=barely moving, 100=fastest
 
@@ -139,6 +149,11 @@ rain.start()              // mount canvas and begin (respects startDelay)
 rain.stop()               // stop, remove canvas, restore children if hideChildren was set
 rain.destroy()            // alias for stop()
 
+// ── State inspection ──────────────────────────────────────────────────────
+rain.isRunning()          // true if started and not stopped (includes paused)
+rain.isPaused()           // true if currently paused
+rain.getConfig()          // shallow clone of current config (callbacks excluded)
+
 // ── Playback ──────────────────────────────────────────────────────────────
 rain.pause()              // freeze animation in place (canvas stays, state preserved)
 rain.resume()             // unfreeze; falls back to start() if not yet running
@@ -146,10 +161,6 @@ rain.resume()             // unfreeze; falls back to start() if not yet running
 // ── Configuration ─────────────────────────────────────────────────────────
 rain.configure(options)   // update any options live — no restart needed
                           // chars and theme changes take effect immediately
-
-// ── Snapshot ──────────────────────────────────────────────────────────────
-const snap = rain.snapshot()   // deep-clone current config
-rain.restore(snap)             // apply a previously saved snapshot via configure()
 
 // ── Bursts ────────────────────────────────────────────────────────────────
 rain.triggerBurst(col?)   // fire a burst manually (col = column index, omit for random)
@@ -256,27 +267,6 @@ rain.on('burstStart', ({ epicenter }) => highlight(epicenter));
 
 ---
 
-## Snapshot and restore
-
-Save and restore the full configuration state, useful for toggling between two looks.
-
-```js
-const rain = new DigitalRain('#el', { theme: 'green', dropSpeed: 98 }).start();
-
-// Save current state
-const saved = rain.snapshot();
-
-// Switch to something dramatic
-rain.configure({ theme: 'red', dropSpeed: 40 });
-rain.stop(); rain.start();
-
-// Restore original later
-rain.restore(saved);
-rain.stop(); rain.start();
-```
-
----
-
 ## Pause and resume
 
 `pause()` freezes the animation in place without destroying the canvas or state.
@@ -359,6 +349,36 @@ rain.configure({ dropSpeed: 30 });        // slow down
 rain.configure({ theme: 'amber' });       // change color
 rain.configure({ burst: false });         // kill bursts
 rain.configure({ chars: '01' });          // switch charset
+rain.configure({ opacity: 0.4 });         // semi-transparent
+rain.configure({ density: 40 });          // sparse columns
+rain.configure({ direction: 'up' });      // reverse direction
+```
+
+### State inspection
+```js
+if (rain.isRunning() && !rain.isPaused()) {
+    rain.pause();
+}
+
+const cfg = rain.getConfig();
+console.log(cfg.theme, cfg.dropSpeed);
+```
+
+### Semi-transparent overlay
+```js
+new DigitalRain('#overlay', {
+    opacity:  0.35,
+    density:  60,
+    burst:    false,
+}).start();
+```
+
+### Upward rain
+```js
+new DigitalRain('#container', {
+    direction: 'up',
+    introDepth: 0,
+}).start();
 ```
 
 ### Stop and restart
