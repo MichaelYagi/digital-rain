@@ -105,6 +105,7 @@ class DigitalRain {
         this._paused         = false;
 
         this._onResize = this._handleResize.bind(this);
+        DigitalRain._registry.set(this._el, this);
     }
 
     /**
@@ -154,7 +155,24 @@ class DigitalRain {
     }
 
     /** Alias for {@link DigitalRain#stop}. */
-    destroy() { this.stop(); }
+    destroy() { this.stop(); DigitalRain._registry.delete(this._el); }
+
+    /**
+     * Retrieve a running DigitalRain instance by its container element or selector.
+     * Returns null if no instance is found for that element.
+     * @param {string|Element} container - CSS selector or DOM element.
+     * @returns {DigitalRain|null}
+     *
+     * @example
+     * new DigitalRain('#rain').start();
+     * // Later, anywhere:
+     * DigitalRain.getInstance('#rain').pause();
+     */
+    static getInstance(container) {
+        const el = typeof container === 'string'
+            ? document.querySelector(container) : container;
+        return DigitalRain._registry.get(el) || null;
+    }
 
     /**
      * Returns true if the animation has been started and not yet stopped.
@@ -372,7 +390,7 @@ class DigitalRain {
             // ── Appearance ───────────────────────────────────────────────
             theme:            `hsl(${rInt(0, 360)}, 100%, 55%)`,
             chars:            rPick(charsetValues),
-            opacity:          rFloat(0.3, 1.0),
+            opacity:          rFloat(0.5, 1.0),
             glowAlpha:        rFloat(0.2, 1.0),
             bgColor:          rPick(['#000000', '#050505', '#030303', '#0a0a0a', '#000805']),
             fontSize:         rPick([12, 14, 16, 18, 20]),
@@ -407,7 +425,12 @@ class DigitalRain {
         Object.assign(picked, overrides);
 
         this.configure(picked);
+        // Temporarily zero fadeOutDuration so the internal restart is instant —
+        // the randomized value is preserved in config for manual stop() calls
+        const savedFade = this._cfg.fadeOutDuration;
+        this._cfg.fadeOutDuration = 0;
         this.stop();
+        this._cfg.fadeOutDuration = savedFade;
         this.start();
         return picked;
     }
@@ -1189,6 +1212,7 @@ class DigitalRain {
 
         // ── Static ────────────────────────────────────────────────────────
         console.log('%c── STATIC ──────────────────────────────────────────', c.head);
+        console.log(`  %cDigitalRain.getInstance(el)%c  Get a running instance by container element or selector.`, c.method, c.desc);
         console.log(`  %cDigitalRain.CHARSETS%c  Built-in character sets (katakana, binary, hex, latin, greek, russian, runic, hangul, arabic, braille, box, math, symbols, blocks, emoticons, hiragana).`, c.method, c.desc);
         console.log(`  %cDigitalRain.OPTIONS%c   All options with type, default, and description.`, c.method, c.desc);
         console.log(`  %cDigitalRain.DEFAULTS%c  All default option values.`, c.method, c.desc);
@@ -1196,3 +1220,6 @@ class DigitalRain {
         console.log(' ');
     }
 }
+
+// Static instance registry — maps container Element → DigitalRain instance
+DigitalRain._registry = new Map();
