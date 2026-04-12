@@ -165,9 +165,22 @@ rain.configure(options)   // update any options live — no restart needed
 // ── Bursts ────────────────────────────────────────────────────────────────
 rain.triggerBurst(col?)   // fire a burst manually (col = column index, omit for random)
 
+// ── Randomize ─────────────────────────────────────────────────────────────
+rain.randomize(overrides?)  // randomize visuals and restart. Returns applied config.
+// picks from DigitalRain.CHARSETS, uses HSL for vivid color
+// dropSpeed, introSpeed, introDepth, speedTiers not touched
+// pass overrides to lock specific values:
+//   rain.randomize({ chars: DigitalRain.CHARSETS.binary })
+
 // ── Events (fluent alternative to the on: {} option) ──────────────────────
 rain.on('burstStart', ({ epicenter }) => console.log(epicenter))
 rain.on('introComplete', () => console.log('ready'))
+
+// ── Static ────────────────────────────────────────────────────────────────
+DigitalRain.CHARSETS         // built-in character set map (see Character sets section)
+DigitalRain.OPTIONS          // all options with type, default, and description
+DigitalRain.DEFAULTS         // all default option values
+DigitalRain.help()           // print full reference to the console
 ```
 
 ---
@@ -210,18 +223,36 @@ rain.configure({ theme: 'blue' });
 
 `chars` accepts any string. Each character is sampled with equal probability.
 
+Built-in charsets are available via `DigitalRain.CHARSETS`:
+
+| Key          | Description |
+|--------------|-------------|
+| `katakana`   | Japanese Katakana + hex digits (default) |
+| `hiragana`   | Japanese Hiragana + digits |
+| `binary`     | `01` |
+| `hex`        | `0–9 A–F` |
+| `latin`      | A–Z a–z 0–9 + punctuation |
+| `greek`      | Greek alphabet + math symbols |
+| `russian`    | Cyrillic alphabet |
+| `runic`      | Elder Futhark runes |
+| `hangul`     | Korean syllables |
+| `arabic`     | Arabic alphabet + digits |
+| `braille`    | Braille patterns |
+| `box`        | Box-drawing characters |
+| `math`       | Mathematical operators and symbols |
+| `symbols`    | ASCII punctuation + special characters |
+| `blocks`     | Block and geometric shapes |
+| `emoticons`  | Miscellaneous symbols and dingbats |
+
 ```js
-// Binary
-rain.configure({ chars: '01' });
+// Use a built-in charset
+rain.configure({ chars: DigitalRain.CHARSETS.braille });
 
-// Latin
-rain.configure({ chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789' });
-
-// Braille
-rain.configure({ chars: '⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟' });
-
-// Custom
+// Use a custom charset
 rain.configure({ chars: '!@#$%^&*()' });
+
+// Mix two charsets
+rain.configure({ chars: DigitalRain.CHARSETS.binary + DigitalRain.CHARSETS.runic });
 ```
 
 Character set changes take effect immediately without a restart.

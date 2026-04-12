@@ -457,12 +457,8 @@
 
 <script src="digital-rain.js"></script>
 <script>
-    const CHARSETS = {
-        katakana: 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
-        binary:   '01',
-        latin:    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()',
-        braille:  '⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯',
-    };
+    // Use the library's built-in charset map
+    const CHARSETS = DigitalRain.CHARSETS;
 
     const rain = new DigitalRain('#rain', {
         dropSpeed:       98,
@@ -597,63 +593,44 @@
 
     // ── Randomize ──────────────────────────────────────────────────────────
     function randomizeAll() {
-        function rInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-        function rFloat(min, max, dec=2) { return Math.round((Math.random() * (max - min) + min) * 10**dec) / 10**dec; }
-        function rPick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+        const p = rain.randomize();
+
         function setSlider(id, valId, val) { const el = document.getElementById(id); if(el){ el.value = val; setVal(valId, val); } }
 
-        const dualFreq   = rInt(0, 100);          setSlider('rDual',   'vDual',   dualFreq);   rain.configure({ dualFrequency: dualFreq });
-        const introDepth = rInt(0, 100);           setSlider('rIDepth', 'vIDepth', introDepth); rain.configure({ introDepth });
-        const trailFast  = rInt(5, 100);           setSlider('rTF',     'vTF',     trailFast);  rain.configure({ trailLengthFast: trailFast });
-        const trailSlow  = rInt(trailFast, 150);   setSlider('rTS',     'vTS',     trailSlow);  rain.configure({ trailLengthSlow: trailSlow });
+        // Sync sliders
+        setSlider('rDual',    'vDual',    p.dualFrequency);
+        setSlider('rTF',      'vTF',      p.trailLengthFast);
+        setSlider('rTS',      'vTS',      p.trailLengthSlow);
+        setSlider('rBDMin',   'vBDMin',   p.burstDurationMin);
+        setSlider('rBDMax',   'vBDMax',   p.burstDurationMax);
+        setSlider('rBIMin',   'vBIMin',   p.burstIntervalMin);
+        setSlider('rBIMax',   'vBIMax',   p.burstIntervalMax);
+        setSlider('rOpacity', 'vOpacity', p.opacity);
+        setSlider('rDensity', 'vDensity', p.density);
+        setSlider('rIDepth',  'vIDepth',  p.introDepth);
+        setSlider('rFade',    'vFade',    p.fadeOutDuration);
 
-        const t0 = rInt(0,100), t1 = rInt(0,100), t2 = rInt(0,60), t3 = rInt(0,60);
-        setSlider('rT0','vT0',t0); setSlider('rT1','vT1',t1);
-        setSlider('rT2','vT2',t2); setSlider('rT3','vT3',t3);
-        rain.configure({ speedTiers: [
-                { frameSkip: 2,  weight: t0 }, { frameSkip: 4,  weight: t1 },
-                { frameSkip: 10, weight: t2 }, { frameSkip: 13, weight: t3 },
-            ]});
+        // Sync burst toggle
+        document.getElementById('burstToggle').classList.toggle('active', p.burst);
 
-        const bdMin = rInt(1,15),  bdMax = rInt(bdMin,20);
-        const biMin = rInt(1,120), biMax = rInt(biMin,300);
-        setSlider('rBDMin','vBDMin',bdMin); setSlider('rBDMax','vBDMax',bdMax);
-        setSlider('rBIMin','vBIMin',biMin); setSlider('rBIMax','vBIMax',biMax);
-        rain.configure({ burstDurationMin: bdMin, burstDurationMax: bdMax, burstIntervalMin: biMin, burstIntervalMax: biMax });
+        // Sync tap toggle
+        document.getElementById('tapToggle').classList.toggle('active', p.tapToBurst);
 
-        // Opacity — bias toward higher values so it's usually visible
-        const opacity = rFloat(0.3, 1.0);
-        setSlider('rOpacity', 'vOpacity', opacity);
-        rain.configure({ opacity });
-
-        // Density — bias away from near-empty
-        const density = rInt(20, 100);
-        setSlider('rDensity', 'vDensity', density);
-        rain.configure({ density });
-
-        // Direction
-        const direction = rPick(['down', 'up']);
-        rain.configure({ direction });
+        // Sync direction pills
         document.querySelectorAll('[id^=dir]').forEach(b => b.classList.remove('active'));
-        const dirBtn = document.getElementById(direction === 'up' ? 'dirUp' : 'dirDown');
+        const dirBtn = document.getElementById(p.direction === 'up' ? 'dirUp' : 'dirDown');
         if (dirBtn) dirBtn.classList.add('active');
 
-        // Theme
-        const theme = rPick(['green', 'red', 'blue', 'white', 'amber']);
-        rain.configure({ theme });
+        // Theme is HSL — clear all named pills
         document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
-        const themeBtn = document.getElementById('theme' + theme.charAt(0).toUpperCase() + theme.slice(1));
-        if (themeBtn) themeBtn.classList.add('active');
 
-        // Charset
-        const charsetKeys = Object.keys(CHARSETS);
-        const charKey = rPick(charsetKeys);
-        rain.configure({ chars: CHARSETS[charKey] });
+        // Charset — match picked string back to a key and activate its pill
         document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
-        const charBtn = document.getElementById('char' + charKey.charAt(0).toUpperCase() + charKey.slice(1));
-        if (charBtn) charBtn.classList.add('active');
-
-        restartRain();
+        const matchedKey = Object.keys(CHARSETS).find(k => CHARSETS[k] === p.chars);
+        if (matchedKey) {
+            const charBtn = document.getElementById('char' + matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1));
+            if (charBtn) charBtn.classList.add('active');
+        }
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

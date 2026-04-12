@@ -319,6 +319,99 @@ class DigitalRain {
         }
     }
 
+    /**
+     * Built-in character sets. Use with `configure({ chars: DigitalRain.CHARSETS.binary })`.
+     * `randomize()` picks from these automatically.
+     * @type {Object.<string, string>}
+     */
+    static get CHARSETS() {
+        return {
+            katakana:  'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEF',
+            hiragana:  'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん0123456789',
+            binary:    '01',
+            hex:       '0123456789ABCDEF',
+            latin:     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()',
+            greek:     'ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩαβγδεζηθικλμνξοπρστυφχψω∑∏∂∇∞≈≠≤≥±×÷√∫',
+            russian:   'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+            runic:     'ᚠᚡᚢᚣᚤᚥᚦᚧᚨᚩᚪᚫᚬᚭᚮᚯᚰᚱᚲᚳᚴᚵᚶᚷᚸᚹᚺᚻᚼᚽᚾᚿᛀᛁᛂᛃᛄᛅᛆᛇᛈᛉᛊᛋᛌᛍᛎᛏᛐᛑᛒᛓ',
+            hangul:    '가나다라마바사아자차카타파하갈날달랄말발살알잘찰칼탈팔할강낭당랑망방상앙장창캉탕팡항',
+            arabic:    'ابتثجحخدذرزسشصضطظعغفقكلمنهوي٠١٢٣٤٥٦٧٨٩',
+            braille:   '⠁⠂⠃⠄⠅⠆⠇⠈⠉⠊⠋⠌⠍⠎⠏⠐⠑⠒⠓⠔⠕⠖⠗⠘⠙⠚⠛⠜⠝⠞⠟⠠⠡⠢⠣⠤⠥⠦⠧⠨⠩⠪⠫⠬⠭⠮⠯',
+            box:       '─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃',
+            math:      '∑∏∂∇∈∉∋∌∍∎∏∐∑∓∔∕∖∗∘∙√∛∜∝∞∟∠∡∢∣∤∥∦∧∨∩∪∫∬∭∮∯∰∱∲∳∴∵∶∷∸∹∺∻∼∽∾∿≀≁≂≃≄≅',
+            symbols:   '!@#$%^&*()-_=+[]{}|;:,.<>?/~`±§¶•©®™°¿¡',
+            blocks:    '█▉▊▋▌▍▎▏▐░▒▓▔▕▖▗▘▙▚▛▜▝▞▟■□▢▣▤▥▦▧▨▩▪▫▬▭▮▯▰▱▲△▴▵▶▷▸▹►▻▼½▽▾▿◀',
+            emoticons: '☺☻☹♠♣♥♦♀♂☯☮✝☪★☆☀☁☂☃☄⚢⚣⚤⚥⚦⚧⚨⚩⚬⚭⚮⚯⚰⚱⚲⚳⚴⚵⚶⚷⚸⚹⚺⚻⚼☎☏✆☖☗♔♕♖♗♘♙♚♛♜♝♞♟✀✁✂✃✄✆✇✈✉✎✏✐✑✒✓✔✕✖✗✘✙✚✛✜✝✞✟✠✡✢✣✤✥✦✧✩✪✫✬✭✮✯✰✱✲✳✴✵✶✷✸✹✺✻✼✽✾✿❀❁❂❃❄❅❆❇❈❉❊❋❍❏❐❑❒❖❘❙❚❛❜❝❞',
+        };
+    }
+
+    /**
+     * Randomize visual and behavioral options and restart.
+     * dropSpeed, introSpeed, introDepth, and speedTiers are not touched.
+     * Uses HSL for color so results are always vivid. Picks from DigitalRain.CHARSETS.
+     * Pass an overrides object to lock specific values while randomizing the rest.
+     * @param {object} [overrides={}] - Options to lock. Same keys as configure().
+     * @returns {object} The full set of randomized values that were applied.
+     */
+    randomize(overrides = {}) {
+        const rInt   = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+        const rFloat = (a, b, dec=2) => Math.round((Math.random() * (b - a) + a) * 10**dec) / 10**dec;
+        const rPick  = (arr) => arr[Math.random() * arr.length | 0];
+        const rBool  = () => Math.random() < 0.5;
+
+        const charsetValues = Object.values(DigitalRain.CHARSETS);
+        const directions    = ['down', 'up'];
+
+        const trailLengthFast  = rInt(5, 100);
+        const burstDurationMin = rInt(1, 15);
+        const burstIntervalMin = rInt(1, 120);
+        const burstFirstMin    = rInt(5, 30);
+        const burst            = rBool();
+
+        const picked = {
+            // ── Appearance ───────────────────────────────────────────────
+            theme:            `hsl(${rInt(0, 360)}, 100%, 55%)`,
+            chars:            rPick(charsetValues),
+            opacity:          rFloat(0.3, 1.0),
+            glowAlpha:        rFloat(0.2, 1.0),
+            bgColor:          rPick(['#000000', '#050505', '#030303', '#0a0a0a', '#000805']),
+            fontSize:         rPick([12, 14, 16, 18, 20]),
+
+            // ── Rain ─────────────────────────────────────────────────────
+            density:          rInt(20, 100),
+            direction:        rPick(directions),
+            dualFrequency:    rInt(0, 100),
+            trailLengthFast,
+            trailLengthSlow:  rInt(trailLengthFast, 150),
+
+            // ── Burst ────────────────────────────────────────────────────
+            burst,
+            burstDurationMin,
+            burstDurationMax: rInt(burstDurationMin, 20),
+            burstIntervalMin,
+            burstIntervalMax: rInt(burstIntervalMin, 300),
+            burstFirstMin,
+            burstFirstMax:    rInt(burstFirstMin, 60),
+            burstWidth:       rInt(4, 20),
+            burstReach:       rInt(40, 200),
+            burstAngle:       rFloat(0, 0.5),
+
+            // ── Behaviour ────────────────────────────────────────────────
+            tapToBurst:       rBool(),
+            hideChildren:     false,   // never randomize — affects DOM structure
+            fadeOutDuration:  rPick([0, 0, 0, 0.5, 1, 2]),  // bias toward instant
+            introDepth:       rInt(0, 100),
+        };
+
+        // Apply overrides — caller can lock any value
+        Object.assign(picked, overrides);
+
+        this.configure(picked);
+        this.stop();
+        this.start();
+        return picked;
+    }
+
     static get DEFAULTS() {
         return {
             startDelay:      0,
@@ -1001,7 +1094,7 @@ class DigitalRain {
             bgColor:          { type: 'string',  default: '#050505', description: 'Background fill color' },
             glowAlpha:        { type: 'number',  default: 0.6,     description: 'Glow intensity on stream heads (0–1)' },
             fontFamily:       { type: 'string',  default: '"Share Tech Mono", "Courier New", monospace', description: 'CSS font-family string' },
-            chars:            { type: 'string',  default: 'アイ...ABCDEF', description: 'Character pool; each char sampled with equal probability' },
+            chars:            { type: 'string',  default: 'アイ...ABCDEF', description: "Character pool. Use DigitalRain.CHARSETS.<name> for built-ins (katakana, binary, hex, latin, greek, russian, runic, hangul, arabic, braille, box, math, symbols, blocks, emoticons, hiragana)" },
             theme:            { type: 'string',  default: 'green', description: "Named theme ('green'|'red'|'blue'|'white'|'amber'), hex color, or any CSS color name" },
             opacity:          { type: 'number',  default: 1,       description: 'Canvas opacity (0–1)' },
             density:          { type: 'number',  default: 100,     description: 'Fraction of columns active (0–100)' },
@@ -1082,6 +1175,7 @@ class DigitalRain {
             ['isPaused()',        'Returns true if currently paused.'],
             ['getConfig()',       'Shallow clone of current config (callbacks excluded).'],
             ['configure(opts)',   'Update options live — no restart needed for most changes.'],
+            ['randomize(overrides?)', 'Randomize visuals and restart. Pass overrides to lock specific values. Returns applied config.'],
             ['triggerBurst(col?)','Fire a burst manually. col = column index, omit for random.'],
             ['on(event, fn)',     "Register event callback: 'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'"],
         ];
@@ -1095,9 +1189,10 @@ class DigitalRain {
 
         // ── Static ────────────────────────────────────────────────────────
         console.log('%c── STATIC ──────────────────────────────────────────', c.head);
-        console.log(`  %cDigitalRain.OPTIONS%c  All options with type, default, and description.`, c.method, c.desc);
-        console.log(`  %cDigitalRain.DEFAULTS%c All default option values.`, c.method, c.desc);
-        console.log(`  %cDigitalRain.help()%c   Print this reference.`, c.method, c.desc);
+        console.log(`  %cDigitalRain.CHARSETS%c  Built-in character sets (katakana, binary, hex, latin, greek, russian, runic, hangul, arabic, braille, box, math, symbols, blocks, emoticons, hiragana).`, c.method, c.desc);
+        console.log(`  %cDigitalRain.OPTIONS%c   All options with type, default, and description.`, c.method, c.desc);
+        console.log(`  %cDigitalRain.DEFAULTS%c  All default option values.`, c.method, c.desc);
+        console.log(`  %cDigitalRain.help()%c    Print this reference.`, c.method, c.desc);
         console.log(' ');
     }
 }
