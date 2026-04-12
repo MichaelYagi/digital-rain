@@ -61,6 +61,11 @@ new DigitalRain('#container', {
     // Unrecognised values log a console warning and fall back to green.
     theme:            'green',
 
+    // Glow/head color override — decouples the stream head and glow from the trail color.
+    // Accepts any CSS color string. null = derived from theme (default).
+    // Trail color and burst flash are unaffected.
+    glowColor:        null,
+
     // Canvas opacity (0–1) — useful for layering rain behind other content
     opacity:          1,
 
@@ -215,6 +220,24 @@ Unrecognised values log a console warning and fall back to green.
 
 ```js
 rain.configure({ theme: 'blue' });
+```
+
+**Glow color**
+
+`glowColor` decouples the stream head and glow from the trail color. The trail LUT and burst flash color remain derived from `theme` — only the bright head pixel and surrounding glow change.
+
+```js
+// Green trails, white-hot heads
+rain.configure({ theme: 'green', glowColor: 'white' });
+
+// Dark red trails, cyan glow
+rain.configure({ theme: 'red', glowColor: '#00ffff' });
+
+// HSL theme with contrasting glow
+rain.configure({ theme: 'hsl(200, 100%, 50%)', glowColor: 'hsl(40, 100%, 75%)' });
+
+// Remove override — glow reverts to theme-derived
+rain.configure({ glowColor: null });
 ```
 
 ---

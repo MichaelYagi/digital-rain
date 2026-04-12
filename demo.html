@@ -430,6 +430,15 @@
                 </div>
             </div>
             <div class="ctrl-col">
+                <div class="ctrl-label">GLOW COLOR</div>
+                <div class="sl-row">
+                    <input type="text" id="glowColorInput" placeholder="null" value=""
+                           style="background:none;border:1px solid rgba(0,255,65,0.2);color:#00ff41;font-family:'Courier New',monospace;font-size:0.64rem;padding:0.2rem 0.4rem;width:8rem;outline:none;"
+                           oninput="setGlowColor(this.value)">
+                    <button class="pill" onclick="clearGlowColor()" style="margin-left:0.3rem">✕</button>
+                </div>
+            </div>
+            <div class="ctrl-col">
                 <div class="ctrl-label">DIRECTION</div>
                 <div class="btn-group">
                     <button class="pill active" id="dirDown" onclick="setDirection('down',this)">↓ Down</button>
@@ -582,6 +591,16 @@
         btn.classList.add('active');
     }
 
+    function setGlowColor(val) {
+        const v = val.trim();
+        rain.configure({ glowColor: v === '' || v === 'null' ? null : v });
+    }
+
+    function clearGlowColor() {
+        document.getElementById('glowColorInput').value = '';
+        rain.configure({ glowColor: null });
+    }
+
     // stepF: like step() but for float sliders
     function stepF(sliderId, delta, valId, min, max, callback) {
         const el  = document.getElementById(sliderId);
@@ -623,6 +642,10 @@
 
         // Theme is HSL — clear all named pills
         document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
+
+        // Sync glowColor input
+        const glowInput = document.getElementById('glowColorInput');
+        if (glowInput) glowInput.value = p.glowColor || '';
 
         // Charset — match picked string back to a key and activate its pill
         document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));

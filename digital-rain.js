@@ -37,6 +37,7 @@ class DigitalRain {
      * @param {string}  [options.chars]                  - Character pool; each char used with equal probability.
      * @param {string}  [options.theme='green']          - Named theme ('green'|'red'|'blue'|'white'|'amber'),
      *                                                     hex color ('#ff00ff', '#0cf'), or any CSS color name.
+     * @param {string}  [options.glowColor=null]          - Glow/head color override. Any CSS color. null = use theme-derived glow.
      * @param {number}  [options.opacity=1]              - Canvas opacity (0–1).
      * @param {number}  [options.density=100]            - Fraction of columns active (0–100).
      * @param {string}  [options.direction='down']       - Drop direction: 'down' | 'up'.
@@ -389,6 +390,7 @@ class DigitalRain {
         const picked = {
             // ── Appearance ───────────────────────────────────────────────
             theme:            `hsl(${rInt(0, 360)}, 100%, 55%)`,
+            glowColor:        Math.random() < 0.5 ? null : `hsl(${rInt(0, 360)}, 100%, 75%)`,
             chars:            rPick(charsetValues),
             opacity:          rFloat(0.5, 1.0),
             glowAlpha:        rFloat(0.2, 1.0),
@@ -488,6 +490,10 @@ class DigitalRain {
 
             // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber'
             theme:          'green',
+
+            // Glow color override — decouples head/glow color from theme.
+            // Accepts any CSS color string. null = use theme-derived glow.
+            glowColor:      null,
 
             // Canvas opacity (0–1)
             opacity:        1,
@@ -596,6 +602,20 @@ class DigitalRain {
         this._greenLUT = new Array(256);
         for (let v = 0; v < 256; v++) this._greenLUT[v] = colorFn(v);
         this._themeColors = themeColors;
+
+        // glowColor override — replaces head and glow while keeping trail LUT and burst from theme
+        if (cfg.glowColor) {
+            const rgb = parseCSSColor(cfg.glowColor);
+            if (rgb) {
+                const [gr, gg, gb] = rgb;
+                this._themeColors = Object.assign({}, themeColors, {
+                    head: `#${gr.toString(16).padStart(2,'0')}${gg.toString(16).padStart(2,'0')}${gb.toString(16).padStart(2,'0')}`,
+                    glow: `rgba(${gr},${gg},${gb},`,
+                });
+            } else {
+                console.warn(`DigitalRain: unrecognised glowColor "${cfg.glowColor}", using theme glow`);
+            }
+        }
     }
 
     _makeFrameSkip() {
@@ -1119,6 +1139,7 @@ class DigitalRain {
             fontFamily:       { type: 'string',  default: '"Share Tech Mono", "Courier New", monospace', description: 'CSS font-family string' },
             chars:            { type: 'string',  default: 'アイ...ABCDEF', description: "Character pool. Use DigitalRain.CHARSETS.<name> for built-ins (katakana, binary, hex, latin, greek, russian, runic, hangul, arabic, braille, box, math, symbols, blocks, emoticons, hiragana)" },
             theme:            { type: 'string',  default: 'green', description: "Named theme ('green'|'red'|'blue'|'white'|'amber'), hex color, or any CSS color name" },
+            glowColor:        { type: 'string',  default: 'null',  description: 'Glow/head color override. Any CSS color. null = derived from theme. Trails and burst color unaffected.' },
             opacity:          { type: 'number',  default: 1,       description: 'Canvas opacity (0–1)' },
             density:          { type: 'number',  default: 100,     description: 'Fraction of columns active (0–100)' },
             direction:        { type: 'string',  default: 'down',  description: "Drop direction: 'down' | 'up'" },
