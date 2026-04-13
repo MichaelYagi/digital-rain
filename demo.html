@@ -430,19 +430,29 @@
                 </div>
             </div>
             <div class="ctrl-col">
-                <div class="ctrl-label">GLOW COLOR</div>
-                <div class="sl-row">
-                    <input type="text" id="glowColorInput" placeholder="null" value=""
-                           style="background:none;border:1px solid rgba(0,255,65,0.2);color:#00ff41;font-family:'Courier New',monospace;font-size:0.64rem;padding:0.2rem 0.4rem;width:8rem;outline:none;"
-                           oninput="setGlowColor(this.value)">
-                    <button class="pill" onclick="clearGlowColor()" style="margin-left:0.3rem">✕</button>
-                </div>
-            </div>
-            <div class="ctrl-col">
                 <div class="ctrl-label">DIRECTION</div>
                 <div class="btn-group">
                     <button class="pill active" id="dirDown" onclick="setDirection('down',this)">↓ Down</button>
                     <button class="pill" id="dirUp" onclick="setDirection('up',this)">↑ Up</button>
+                </div>
+            </div>
+            <div class="ctrl-col">
+                <div class="ctrl-label">FONT SIZE</div>
+                <div class="sl-row">
+                    <button class="arr" onclick="step('rFontSize',-1,'vFontSize',8,32,v=>rain.configure({fontSize:v}))">◀</button>
+                    <input type="range" id="rFontSize" min="8" max="32" value="14"
+                           oninput="setVal('vFontSize',this.value); rain.configure({fontSize:+this.value})">
+                    <button class="arr" onclick="step('rFontSize',+1,'vFontSize',8,32,v=>rain.configure({fontSize:v}))">▶</button>
+                    <span class="val" id="vFontSize">14</span>
+                </div>
+            </div>
+            <div class="ctrl-col">
+                <div class="ctrl-label">FONT</div>
+                <div class="btn-group">
+                    <button class="pill active" id="fontMono"    onclick="setFont('mono',this)">Mono</button>
+                    <button class="pill" id="fontShareTech"      onclick="setFont('sharetech',this)">Share Tech</button>
+                    <button class="pill" id="fontSerif"          onclick="setFont('serif',this)">Serif</button>
+                    <button class="pill" id="fontSansSerif"      onclick="setFont('sans',this)">Sans</button>
                 </div>
             </div>
         </div>
@@ -591,14 +601,17 @@
         btn.classList.add('active');
     }
 
-    function setGlowColor(val) {
-        const v = val.trim();
-        rain.configure({ glowColor: v === '' || v === 'null' ? null : v });
-    }
+    const FONTS = {
+        mono:      '"Courier New", "Lucida Console", monospace',
+        sharetech: '"Share Tech Mono", "Courier New", monospace',
+        serif:     '"Georgia", "Times New Roman", serif',
+        sans:      '"Arial", "Helvetica", sans-serif',
+    };
 
-    function clearGlowColor() {
-        document.getElementById('glowColorInput').value = '';
-        rain.configure({ glowColor: null });
+    function setFont(key, btn) {
+        rain.configure({ fontFamily: FONTS[key] });
+        document.querySelectorAll('[id^=font]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
     }
 
     // stepF: like step() but for float sliders
@@ -642,10 +655,6 @@
 
         // Theme is HSL — clear all named pills
         document.querySelectorAll('[id^=theme]').forEach(b => b.classList.remove('active'));
-
-        // Sync glowColor input
-        const glowInput = document.getElementById('glowColorInput');
-        if (glowInput) glowInput.value = p.glowColor || '';
 
         // Charset — match picked string back to a key and activate its pill
         document.querySelectorAll('[id^=char]').forEach(b => b.classList.remove('active'));
