@@ -38,6 +38,22 @@ HTMLCanvasElement.prototype.transferControlToOffscreen = function () {
     return new OffscreenCanvas(this.width, this.height);
 };
 
+// Mock getContext so _parseCSSColor doesn't throw in jsdom (no canvas package).
+// fillStyle always returns '#000000' which means unrecognised colors fall back
+// to the theme default — acceptable for unit tests.
+const _origGetContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function (type) {
+    if (type === '2d') {
+        return {
+            fillStyle: '#000000',
+            fillRect:  () => {},
+            fillText:  () => {},
+            clearRect: () => {},
+        };
+    }
+    return _origGetContext ? _origGetContext.call(this, type) : null;
+};
+
 const _gcs = window.getComputedStyle.bind(window);
 window.getComputedStyle = (el) => new Proxy(_gcs(el), {
     get(t, p) {
