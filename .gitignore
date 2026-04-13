@@ -6,3 +6,5 @@
 /tests/browser/package-lock.json
 /tests/browser/test-connection.spec.js
 /tests/browser/test-local.spec.js
+/tests/browser/node_modules/
+/tests/browser/test-results/
