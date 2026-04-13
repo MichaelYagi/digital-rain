@@ -1,29 +1,44 @@
 # Tests
 
-Unit tests for `digital-rain.js` using [Vitest](https://vitest.dev) and jsdom.
-No browser required — Worker and OffscreenCanvas are mocked.
+Two suites — unit tests (Vitest + jsdom, no browser) and integration tests (Playwright, real browser).
+
+Playwright lives in `browser/` with its own `node_modules` to avoid conflicts with Vitest's globals.
 
 ---
 
 ## Setup
 
 ```bash
+# Unit test dependencies
 cd tests
 npm install
+
+# Browser test dependencies — separate install to avoid conflicts
+cd tests/browser
+npm install
+npx playwright install chromium firefox   # first time only
 ```
 
-Place `digital-rain.js` one level up (i.e. at `../digital-rain.js` relative to this folder).
+`digital-rain.js` must be at `../digital-rain.js` relative to `tests/`.
 
 ---
 
 ## Run
 
+All commands from `tests/`:
+
 ```bash
-# Run all tests once
+# Unit tests only (fast, no browser)
 npm test
 
-# Watch mode — re-runs on file save
+# Unit tests in watch mode
 npm run test:watch
+
+# Integration tests (real browser)
+npm run test:browser
+
+# Both suites
+npm run test:all
 ```
 
 ---
@@ -31,48 +46,69 @@ npm run test:watch
 ## Files
 
 ```
-tests/                         ← run npm test from here
+tests/
 ├── README.md
-├── package.json
+├── package.json              ← Vitest only
 ├── vitest.config.js
-└── digital-rain.test.js       ← all tests + inlined mocks
+├── digital-rain.test.js      ← unit tests + inlined jsdom mocks
+└── browser/
+    ├── package.json          ← Playwright only (separate node_modules)
+    ├── playwright.config.js
+    ├── harness.html          ← test page served to Playwright
+    └── digital-rain.spec.js  ← integration tests
 
-../digital-rain.js             ← library under test
+../digital-rain.js            ← library under test
 ```
-
-All browser mocks (Worker, OffscreenCanvas, RAF, etc.) are inlined at the top of `digital-rain.test.js` so no separate setup file is needed.
 
 ---
 
-## What's tested
+## Unit tests (`npm test`)
 
-| Group | Tests |
-|-------|-------|
+Run in jsdom — Worker and OffscreenCanvas are mocked. Fast, no browser needed.
+
+| Group | What's tested |
+|-------|---------------|
 | `CHARSETS` | 16 entries, all non-empty strings, correct keys |
-| `DEFAULTS` | All expected keys present, speedTiers shape, sensible values |
+| `DEFAULTS` | All expected keys, speedTiers shape, sensible values |
 | `OPTIONS` | Keys align with DEFAULTS, each entry has type/default/description |
-| `getInstance` | Null before construction, returns instance, accepts selector, null after destroy |
+| `getInstance` | Null before/after, returns instance, accepts selector |
 | `help()` | Does not throw |
-| Constructor | Throws for missing element, accepts element/selector, merges options, registers in registry |
-| Lifecycle | `isRunning`/`isPaused` state machine across all transitions |
-| Worker communication | Correct messages for start/stop/pause/resume/configure/triggerBurst/getStats |
-| `getConfig()` | Returns clone, excludes callbacks, reflects changes |
-| `getStats()` | Returns Promise, resolves without worker, resolves via worker reply, handles multiple in-flight calls |
-| Events | All 7 events fire correctly, chaining, error swallowing |
-| `_resolveTheme()` | All 5 named themes, hex, HSL, glowColor override, invalid fallback |
-| `randomize()` | Invariants (20 runs): trailLow≥Fast, durations, opacity range, charset source, HSL theme, overrides |
-| Canvas/DOM | Injection, styles, removal, `hideChildren`, `tapToBurst`, opacity |
+| Constructor | Throws for missing element, accepts element/selector, merges options |
+| Lifecycle | Full state machine: start/stop/pause/resume/destroy |
+| Worker communication | Correct messages posted for every method |
+| `getConfig()` | Clone, excludes callbacks, reflects changes |
+| `getStats()` | Returns Promise, resolves without worker, resolves via mock reply |
+| Events | All 7 events, chaining, error swallowing |
+| `_resolveTheme()` | All 5 named themes, hex, HSL, glowColor override, fallback |
+| `randomize()` | Invariants over 20 runs: ranges, charset source, overrides |
+| Canvas/DOM | Injection, styles, removal, `hideChildren`, `tapToBurst` |
 | `startDelay` | Deferred mount, mounts after delay |
-| Structure | Worker embed, LUTs, message types, syncTo removed, no dead fields |
+| Structure | Worker embed, LUTs, message types, no dead fields |
+
+---
+
+## Integration tests (`npm run test:browser`)
+
+Run in Chromium and Firefox via Playwright with a real Worker + OffscreenCanvas.
+
+| Group | What's tested |
+|-------|---------------|
+| Worker lifecycle | Created on start, terminated on stop, no-op double-start, fresh worker after stop+start |
+| Canvas DOM | Injected, correct styles, removed on stop, opacity, pointerEvents, non-zero dimensions |
+| `getStats()` | Correct shape, columns > 0, booting/paused flags, frame advances, pauses correctly |
+| Events | All 7 events through real postMessage chain |
+| `configure()` | Config updates, opacity live, theme/direction don't throw, density affects worker state |
+| `getInstance` | By selector, null after destroy |
+| `hideChildren` | Hides on start, restores on stop |
+| `tapToBurst` | Real click fires burstStart |
+| `randomize()` | Restarts cleanly, keeps running, overrides respected |
+| Multiple instances | Two instances run independently, stopping one doesn't affect other |
+| Stress | 5× start/stop cycles without error |
 
 ---
 
 ## Adding tests
 
-Tests live in `tests/digital-rain.test.js`. Add a new `describe` block for each
-feature area and `it` blocks for individual behaviours. Prefer testing observable
-outputs (config values, messages posted, DOM changes) over internal state.
+**Unit tests** — add `describe`/`it` blocks to `digital-rain.test.js`. Test observable outputs (config values, messages posted, DOM state) not internal fields.
 
-When a new option is added to `DEFAULTS`, add a test to the `DEFAULTS` and
-`randomize()` sections. When a new worker message type is added, add it to the
-structural integrity check.
+**Integration tests** — add `test()` blocks to `browser/digital-rain.spec.js`. Use `boot(page, opts)` for tests that need a running instance, `load(page)` for tests that set up their own. Keep timeouts generous — worker startup takes ~100ms.

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>digital-rain integration test harness</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; }
+        #container  { position: fixed; inset: 0; }
+        #container2 { position: fixed; top: 0; left: 0; width: 400px; height: 300px; }
+        #child { position: relative; z-index: 1; color: white; }
+    </style>
+</head>
+<body>
+<div id="container">
+    <p id="child">child content</p>
+</div>
+<div id="container2"></div>
+<script src="/digital-rain.js"></script>
+</body>
+</html>

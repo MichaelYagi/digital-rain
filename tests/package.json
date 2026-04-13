@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test":       "npx vitest run",
-    "test:watch": "npx vitest"
+    "test":         "npx vitest run digital-rain.test.js",
+    "test:watch":   "npx vitest digital-rain.test.js",
+    "test:browser": "cd browser && npm test",
+    "test:all":     "npx vitest run digital-rain.test.js && cd browser && npm test"
   },
   "devDependencies": {
     "vitest": "^1.6.0",

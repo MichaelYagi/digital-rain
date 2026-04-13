@@ -28,7 +28,7 @@ jobs:
         run: cd tests && npm install
 
       - name: Run tests
-        run: cd tests && node node_modules/vitest/vitest.mjs run --pool=forks
+        run: cd tests && node node_modules/vitest/vitest.mjs run digital-rain.test.js
 
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5

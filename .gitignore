@@ -3,3 +3,6 @@
 /node_modules/
 /package-lock.json
 /tests/node_modules/
+/tests/browser/package-lock.json
+/tests/browser/test-connection.spec.js
+/tests/browser/test-local.spec.js
