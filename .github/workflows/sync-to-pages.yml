@@ -19,13 +19,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Install test dependencies
         run: cd tests && npm install
 
       - name: Run tests
-        run: cd tests && npm test
+        run: cd tests && node node_modules/vitest/vitest.mjs run
 
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5
