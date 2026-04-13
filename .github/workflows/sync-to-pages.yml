@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout digital-rain repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
 
       - name: Checkout michaelyagi.github.io repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5
         with:
           repository: MichaelYagi/michaelyagi.github.io
           token: ${{ secrets.PAGES_SYNC_TOKEN }}
