@@ -24,11 +24,20 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install test dependencies
+      - name: Install unit test dependencies
         run: cd tests && npm install
 
-      - name: Run tests
+      - name: Run unit tests
         run: cd tests && node node_modules/vitest/vitest.mjs run digital-rain.test.js
+
+      - name: Install browser test dependencies
+        run: cd tests/browser && npm install
+
+      - name: Install Playwright browsers
+        run: cd tests/browser && npx playwright install --with-deps chromium firefox
+
+      - name: Run integration tests
+        run: cd tests/browser && npx playwright test
 
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5
