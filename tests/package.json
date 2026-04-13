@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test":       "vitest run",
-    "test:watch": "vitest"
+    "test": "../node_modules/.bin/vitest run",
+    "test:watch": "../node_modules/.bin/vitest"
   },
   "devDependencies": {
     "vitest": "^1.6.0",
