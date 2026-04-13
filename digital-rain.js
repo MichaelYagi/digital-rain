@@ -511,7 +511,6 @@ class DigitalRain {
         const burstDurationMin = rInt(1, 15);
         const burstIntervalMin = rInt(1, 120);
         const burstFirstMin    = rInt(5, 30);
-        const burst            = rBool();
 
         const picked = {
             // ── Appearance ───────────────────────────────────────────────
@@ -530,7 +529,7 @@ class DigitalRain {
             trailLengthSlow:  rInt(trailLengthFast, 150),
 
             // ── Burst ────────────────────────────────────────────────────
-            burst,
+            burst:            true,
             burstDurationMin,
             burstDurationMax: rInt(burstDurationMin, 20),
             burstIntervalMin,
@@ -542,7 +541,7 @@ class DigitalRain {
             burstAngle:       rFloat(0, 0.5),
 
             // ── Behaviour ────────────────────────────────────────────────
-            tapToBurst:       rBool(),
+            tapToBurst:       true,
             hideChildren:     false,   // never randomize — affects DOM structure
             fadeOutDuration:  rPick([0, 0, 0, 0.5, 1, 2]),  // bias toward instant
             introDepth:       rInt(0, 100),
