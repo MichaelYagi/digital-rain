@@ -1,0 +1,38 @@
+name: Sync Demo to GitHub Pages
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "demo.html"
+      - "digital-rain.js"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout digital-rain repo
+        uses: actions/checkout@v4
+
+      - name: Checkout GitHub Pages repo
+        uses: actions/checkout@v4
+        with:
+          repository: MichaelYagi/michaelyagi.github.io
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: pages
+
+      - name: Copy demo files into GitHub Pages repo
+        run: |
+          mkdir -p pages/digital-rain
+          cp demo.html pages/digital-rain/
+          cp digital-rain.js pages/digital-rain/
+
+      - name: Commit and push changes
+        run: |
+          cd pages
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "Auto-sync digital rain demo" || echo "No changes to commit"
+          git push
