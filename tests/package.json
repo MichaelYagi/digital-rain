@@ -8,6 +8,7 @@
   },
   "devDependencies": {
     "vitest": "^1.6.0",
-    "jsdom":  "^24.1.0"
+    "jsdom":  "^24.1.0",
+    "canvas": "^2.11.2"
   }
 }

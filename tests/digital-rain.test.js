@@ -38,22 +38,6 @@ HTMLCanvasElement.prototype.transferControlToOffscreen = function () {
     return new OffscreenCanvas(this.width, this.height);
 };
 
-// Mock getContext so _parseCSSColor doesn't throw in jsdom (no canvas package).
-// fillStyle always returns '#000000' which means unrecognised colors fall back
-// to the theme default — acceptable for unit tests.
-const _origGetContext = HTMLCanvasElement.prototype.getContext;
-HTMLCanvasElement.prototype.getContext = function (type) {
-    if (type === '2d') {
-        return {
-            fillStyle: '#000000',
-            fillRect:  () => {},
-            fillText:  () => {},
-            clearRect: () => {},
-        };
-    }
-    return _origGetContext ? _origGetContext.call(this, type) : null;
-};
-
 const _gcs = window.getComputedStyle.bind(window);
 window.getComputedStyle = (el) => new Proxy(_gcs(el), {
     get(t, p) {
@@ -612,18 +596,21 @@ describe('_resolveTheme()', () => {
         expect(greenLUT[255]).toBe('rgb(0,255,0)');
     });
 
-    it('hex theme produces valid burst RGB array', () => {
+    it('hex theme produces correct burst RGB', () => {
         const { themeColors } = rain._resolveTheme({ theme: '#ff0080', glowColor: null });
-        expect(Array.isArray(themeColors.burst)).toBe(true);
-        expect(themeColors.burst).toHaveLength(3);
-        themeColors.burst.forEach(v => {
-            expect(v).toBeGreaterThanOrEqual(0);
-            expect(v).toBeLessThanOrEqual(255);
-        });
+        expect(themeColors.burst[0]).toBe(255);
+        expect(themeColors.burst[1]).toBe(0);
+        expect(themeColors.burst[2]).toBe(128);
     });
 
     it('HSL theme resolves without throwing', () => {
         expect(() => rain._resolveTheme({ theme: 'hsl(200,100%,50%)', glowColor: null })).not.toThrow();
+    });
+
+    it('HSL theme produces a valid non-zero burst RGB', () => {
+        const { themeColors } = rain._resolveTheme({ theme: 'hsl(120,100%,50%)', glowColor: null });
+        // hsl(120,100%,50%) = pure green = rgb(0,128,0)
+        expect(themeColors.burst[1]).toBeGreaterThan(0);
     });
 
     it('unrecognised theme warns and falls back to green', () => {
@@ -634,13 +621,12 @@ describe('_resolveTheme()', () => {
         warn.mockRestore();
     });
 
-    it('glowColor does not affect burst colors', () => {
+    it('glowColor overrides head and glow, not burst', () => {
         const base = rain._resolveTheme({ theme: 'green', glowColor: null });
         const over = rain._resolveTheme({ theme: 'green', glowColor: '#ff0000' });
-        // burst must be unchanged regardless of glowColor
+        expect(over.themeColors.head).not.toBe(base.themeColors.head);
+        expect(over.themeColors.glow).toContain('255,0,0');
         expect(over.themeColors.burst).toEqual(base.themeColors.burst);
-        // themeColors object must be a new object (not the same reference)
-        expect(over.themeColors).not.toBe(base.themeColors);
     });
 
     it('invalid glowColor warns and keeps theme glow', () => {

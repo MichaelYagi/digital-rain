@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Install canvas system dependencies
+        run: sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
       - name: Install test dependencies
         run: cd tests && npm install
 
