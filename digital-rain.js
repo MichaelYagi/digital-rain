@@ -104,6 +104,10 @@ class DigitalRain {
         this._fadeOutRaf     = null;
         this._fadeOutAlpha   = 1;
         this._paused         = false;
+        this._fpsLastTime    = 0;
+        this._fps            = 0;
+        this._syncRaf        = null;
+        this._syncAnalyser   = null;
 
         this._onResize = this._handleResize.bind(this);
         DigitalRain._registry.set(this._el, this);
@@ -221,6 +225,128 @@ class DigitalRain {
         this._paused = false;
         this._rafId = requestAnimationFrame(this._boundDraw);
         this._emit('resume');
+    }
+
+    /**
+     * Returns live runtime statistics.
+     * @returns {{ frame:number, fps:number, columns:number, activeColumns:number,
+     *             dormantColumns:number, streams:number, burstActive:boolean,
+     *             burstEpicenter:number, paused:boolean, booting:boolean }}
+     */
+    getStats() {
+        let streams = 0, active = 0, dormant = 0;
+        for (const col of this._cols) {
+            if (col.dormant) { dormant++; continue; }
+            active++;
+            streams += col.streams ? col.streams.length : 0;
+        }
+        return {
+            frame:          this._frameCount,
+            fps:            this._fps,
+            columns:        this._cols.length,
+            activeColumns:  active,
+            dormantColumns: dormant,
+            streams,
+            burstActive:    this._burstActive,
+            burstEpicenter: this._burstEpicenter,
+            paused:         this._paused,
+            booting:        !!this._booting,
+        };
+    }
+
+    /**
+     * Sync rain parameters to a Web Audio AnalyserNode.
+     * Bass drives dropSpeed, mids drive glowAlpha, highs flash opacity, transients trigger bursts.
+     * Existing streams are never reset — only speed and visual parameters change.
+     * @param {AnalyserNode} analyser - Web Audio AnalyserNode.
+     * @param {object} [opts]
+     * @param {number}  [opts.sensitivity=1.0]        - Overall reaction multiplier (0.1–3.0).
+     * @param {boolean} [opts.bass=true]               - Map bass energy to dropSpeed.
+     * @param {boolean} [opts.mids=true]               - Map mid energy to glowAlpha.
+     * @param {boolean} [opts.highs=true]              - Map high energy to opacity flash.
+     * @param {boolean} [opts.transients=true]         - Trigger bursts on loud transients.
+     * @param {number}  [opts.transientThreshold=0.7]  - Energy level (0–1) that fires a burst.
+     * @returns {void}
+     */
+    syncTo(analyser, opts = {}) {
+        if (!analyser || typeof analyser.getByteFrequencyData !== 'function') {
+            console.warn('DigitalRain.syncTo: expected a Web Audio AnalyserNode');
+            return;
+        }
+        this.unsync();
+        this._syncAnalyser = analyser;
+
+        const sens        = opts.sensitivity        ?? 1.0;
+        const doBass      = opts.bass               ?? true;
+        const doMids      = opts.mids               ?? true;
+        const doHighs     = opts.highs              ?? true;
+        const doTransient = opts.transients         ?? true;
+        const transThresh = opts.transientThreshold ?? 0.7;
+
+        const bufLen  = analyser.frequencyBinCount;
+        const data    = new Uint8Array(bufLen);
+        const bassEnd = Math.floor(bufLen * 0.08);
+        const midEnd  = Math.floor(bufLen * 0.35);
+
+        const avg = (arr, from, to) => {
+            let s = 0;
+            for (let i = from; i < to; i++) s += arr[i];
+            return s / ((to - from) || 1) / 255;
+        };
+
+        let lastEnergy    = 0;
+        let burstCooldown = 0;
+        let lastSpeed     = this._cfg.dropSpeed;
+
+        const tick = () => {
+            this._syncRaf = requestAnimationFrame(tick);
+            if (!this._running || this._paused) return;
+
+            analyser.getByteFrequencyData(data);
+            const bass  = avg(data, 0,       bassEnd);
+            const mids  = avg(data, bassEnd,  midEnd);
+            const highs = avg(data, midEnd,   bufLen);
+
+            if (doBass) {
+                const speed = Math.round(50 + Math.min(1, bass * sens * 2.5) * 50);
+                if (Math.abs(speed - lastSpeed) > 2) {
+                    this._cfg.dropSpeed = speed;
+                    this._computeCached();
+                    for (const col of this._cols) {
+                        for (const st of col.streams) {
+                            st.speed = this._makeFrameSkip();
+                            st.steps = this._makeSteps(st.speed);
+                        }
+                    }
+                    lastSpeed = speed;
+                }
+            }
+            if (doMids)  this._cfg.glowAlpha = Math.min(1.5, 0.2 + mids * sens * 2.0);
+            if (doHighs && this._canvas) this._canvas.style.opacity = Math.min(1, 0.6 + highs * sens * 1.5);
+
+            if (doTransient && burstCooldown <= 0) {
+                const energy = (bass + mids + highs) / 3;
+                const delta  = energy - lastEnergy;
+                if (energy > transThresh * sens && delta > 0.15) {
+                    this.triggerBurst();
+                    this._emit('burstStart', { epicenter: this._burstEpicenter });
+                    burstCooldown = 30;
+                }
+                lastEnergy = energy;
+            }
+            if (burstCooldown > 0) burstCooldown--;
+        };
+
+        this._syncRaf = requestAnimationFrame(tick);
+    }
+
+    /**
+     * Stop audio sync started by syncTo().
+     * @returns {void}
+     */
+    unsync() {
+        if (this._syncRaf) { cancelAnimationFrame(this._syncRaf); this._syncRaf = null; }
+        this._syncAnalyser = null;
     }
 
     /**
@@ -602,7 +728,7 @@ class DigitalRain {
         for (let v = 0; v < 256; v++) this._greenLUT[v] = colorFn(v);
         this._themeColors = themeColors;
 
-        // glowColor override — replaces head and glow while keeping trail LUT and burst from theme
+        // glowColor override
         if (cfg.glowColor) {
             const rgb = parseCSSColor(cfg.glowColor);
             if (rgb) {
@@ -615,19 +741,48 @@ class DigitalRain {
                 console.warn(`DigitalRain: unrecognised glowColor "${cfg.glowColor}", using theme glow`);
             }
         }
+
+        // ── Pre-flattened speed tier table ────────────────────────────────
+        const tiers = cfg.speedTiers;
+        const mult  = this._speedMult;
+        let tierTotal = 0;
+        for (let i = 0; i < tiers.length; i++) tierTotal += tiers[i].weight;
+        this._tierTable = [];
+        for (let i = 0; i < tiers.length; i++) {
+            const count = Math.round(tiers[i].weight / tierTotal * 1000);
+            const val   = Math.max(1, tiers[i].frameSkip * mult);
+            for (let j = 0; j < count; j++) this._tierTable.push(val);
+        }
+
+        // ── Gaussian burst falloff LUT ────────────────────────────────────
+        const bw   = cfg.burstWidth || 10;
+        const bw2  = bw * bw;
+        const bMax = bw * 4;
+        this._burstFalloffLUT = new Float32Array(bMax + 1);
+        for (let d = 0; d <= bMax; d++) {
+            this._burstFalloffLUT[d] = Math.exp(-(d * d) / (2 * bw2));
+        }
+
+        // ── Burst color LUTs ──────────────────────────────────────────────
+        const [bRc, bGc, bBc] = this._themeColors.burst;
+        this._burstGlowLUT  = new Array(256);
+        this._burstHeadLUT  = new Array(256);
+        this._burstColorLUT = new Array(256);
+        for (let i = 0; i < 256; i++) {
+            const t  = i / 255;
+            const gR = Math.min(255, bRc * t | 0);
+            const gG = Math.min(255, bGc * t | 0);
+            const gB = Math.min(255, bBc * t | 0);
+            const w  = t * t * 255 | 0;
+            this._burstGlowLUT[i]  = `rgba(${gR},${gG},${gB},`;
+            this._burstHeadLUT[i]  = `rgb(${Math.min(255,gR+w)},${Math.min(255,gG+w)},${Math.min(255,gB+w)})`;
+            this._burstColorLUT[i] = `rgb(${gR},${gG},${gB})`;
+        }
     }
 
     _makeFrameSkip() {
-        const tiers = this._cfg.speedTiers;
-        const mult  = this._speedMult;
-        let total = 0;
-        for (let i = 0; i < tiers.length; i++) total += tiers[i].weight;
-        let r = Math.random() * total;
-        for (let i = 0; i < tiers.length; i++) {
-            r -= tiers[i].weight;
-            if (r <= 0) return Math.max(1, tiers[i].frameSkip * mult);
-        }
-        return Math.max(1, tiers[tiers.length - 1].frameSkip * mult);
+        const table = this._tierTable;
+        return table[Math.random() * table.length | 0];
     }
 
     _makeSteps(frameSkip) {
@@ -758,6 +913,7 @@ class DigitalRain {
     _unmount() {
         if (this._fadeOutRaf) { cancelAnimationFrame(this._fadeOutRaf); this._fadeOutRaf = null; }
         if (this._rafId)  { cancelAnimationFrame(this._rafId); this._rafId = null; }
+        this.unsync();
         if (this._canvas) {
             if (this._boundTap) {
                 this._canvas.removeEventListener('click',      this._boundTap);
@@ -787,26 +943,19 @@ class DigitalRain {
         const density = this._cfg.density != null ? Math.max(0, Math.min(100, this._cfg.density)) : 100;
         const center  = Math.floor(n / 2);
 
-        // Build a deterministic dormant set — guarantee exactly floor(n * density/100)
-        // active columns rather than relying on per-column random chance
         const activeCount = Math.max(1, Math.floor(n * density / 100));
-        // Create index array, shuffle, mark first activeCount as active
         const indices = Array.from({ length: n }, (_, i) => i);
         for (let i = n - 1; i > 0; i--) {
             const j = Math.random() * (i + 1) | 0;
-            [indices[i], indices[j]] = [indices[j], indices[i]];
+            const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
         }
         const activeSet = new Set(indices.slice(0, activeCount));
-        // Center column must never be dormant during boot
         if (this._booting) activeSet.add(center);
 
         this._cols = Array.from({ length: n }, (_, i) => ({
-            streams:  [ this._makeStream(this._booting ? 999999 : 60) ],
-            spawnCD:  this._dualCooldown(),
-            dormant:  !activeSet.has(i),
-            mapA:     Object.create(null),
-            mapB:     Object.create(null),
-            useA:     true,
+            streams: [ this._makeStream(this._booting ? 999999 : 60) ],
+            spawnCD: this._dualCooldown(),
+            dormant: !activeSet.has(i),
         }));
     }
 
@@ -821,9 +970,11 @@ class DigitalRain {
 
     // ── Draw ──────────────────────────────────────────────────────────────
 
-    _drawFrame() {
+    _drawFrame(now) {
         if (!this._ctx || !this._canvas) return;
         this._frameCount++;
+        if (this._fpsLastTime) this._fps = Math.round(1000 / (now - this._fpsLastTime));
+        this._fpsLastTime = now;
 
         const cfg     = this._cfg;
         const ctx     = this._ctx;
@@ -931,32 +1082,31 @@ class DigitalRain {
         const decay          = lightningDecay;
 
         ctx.font = this._fontStr; // set once per frame
-        const greenLUT    = this._greenLUT;
-        const themeColors = this._themeColors;
-        const glowLUT     = `${themeColors.glow}${cfg.glowAlpha})`;
-        const [bR, bG, bB] = themeColors.burst;
-        const dirUp       = cfg.direction === 'up';
+        const greenLUT        = this._greenLUT;
+        const themeColors     = this._themeColors;
+        const glowLUT         = `${themeColors.glow}${cfg.glowAlpha})`;
+        const burstFalloffLUT = this._burstFalloffLUT;
+        const burstGlowLUT    = this._burstGlowLUT;
+        const burstHeadLUT    = this._burstHeadLUT;
+        const burstColorLUT   = this._burstColorLUT;
+        const burstJagArr     = this._burstJag;
+        const dirUp           = cfg.direction === 'up';
 
         for (let i = 0; i < numCols; i++) {
             const col = this._cols[i];
-            if (col.dormant) continue; // density skip
-            const x   = i * fw;
+            if (col.dormant) continue;
+            const x = i * fw;
 
-            // ── Lightning intensity (column-level, no per-entry row calc yet) ──
+            // ── Lightning intensity (column-level) ────────────────────────
             let colBIntens = 0;
             if (burstActive && burstEpicenter >= 0) {
                 const colDelta = i - burstEpicenter;
                 const absDelta = colDelta < 0 ? -colDelta : colDelta;
-                // Only light up columns within reach
                 if (absDelta <= burstReach) {
-                    // Falloff along the bolt: strong near epicenter, fades at reach
                     const reach_t = 1 - absDelta / burstReach;
                     colBIntens = reach_t * reach_t * decay;
                 }
             }
-
-            const rb        = colBIntens * 230 | 0;
-            const glowAlpha = cfg.glowAlpha + colBIntens * 0.5;
 
             // ── Try to spawn second stream ─────────────────────────────────
             if (cfg.dualFrequency > 0 && col.streams.length === 1 && col.streams[0].active
@@ -970,14 +1120,15 @@ class DigitalRain {
             }
 
             // ── STEP 1: Advance state ──────────────────────────────────────
-            for (let s = 0; s < col.streams.length; s++) {
+            const nSt = col.streams.length;
+            for (let s = 0; s < nSt; s++) {
                 const st = col.streams[s];
                 if (!st.active || fc % st.speed !== 0) continue;
                 if (st.delay > 0) { st.delay--; continue; }
 
-                if (col.streams.length > 1) {
+                if (nSt > 1) {
                     let tooClose = false;
-                    for (let o = 0; o < col.streams.length; o++) {
+                    for (let o = 0; o < nSt; o++) {
                         if (o === s) continue;
                         const diff = st.row - col.streams[o].row;
                         if (col.streams[o].active && diff < minGap && diff > -minGap) { tooClose = true; break; }
@@ -986,18 +1137,19 @@ class DigitalRain {
                 }
                 st.suppressTicks = 0;
 
-                const trails = st.trails;
+                const trails  = st.trails;
+                const nTrails = trails.length;
                 if (st.row < maxRow) {
-                    for (let t = 0; t < trails.length; t++) trails[t].brightness--;
-                    for (let t = trails.length - 1; t >= 0; t--) {
+                    for (let t = 0; t < nTrails; t++) trails[t].brightness--;
+                    for (let t = nTrails - 1; t >= 0; t--) {
                         if (trails[t].brightness <= 0) { trails[t] = trails[trails.length - 1]; trails.pop(); }
                     }
                     trails.push({ row: st.row, char: CHARS[Math.random() * CHARS.length | 0], brightness: st.steps + 6 });
                     st.row++;
                 } else {
                     st.active = false;
-                    for (let t = 0; t < trails.length; t++) trails[t].brightness--;
-                    for (let t = trails.length - 1; t >= 0; t--) {
+                    for (let t = 0; t < nTrails; t++) trails[t].brightness--;
+                    for (let t = nTrails - 1; t >= 0; t--) {
                         if (trails[t].brightness <= 0) { trails[t] = trails[trails.length - 1]; trails.pop(); }
                     }
                 }
@@ -1007,9 +1159,10 @@ class DigitalRain {
             for (let s = 0; s < col.streams.length; s++) {
                 const st = col.streams[s];
                 if (st.active || fc % st.speed !== 0) continue;
-                const trails = st.trails;
-                for (let t = 0; t < trails.length; t++) trails[t].brightness--;
-                for (let t = trails.length - 1; t >= 0; t--) {
+                const trails  = st.trails;
+                const nTrails = trails.length;
+                for (let t = 0; t < nTrails; t++) trails[t].brightness--;
+                for (let t = nTrails - 1; t >= 0; t--) {
                     if (trails[t].brightness <= 0) { trails[t] = trails[trails.length - 1]; trails.pop(); }
                 }
             }
@@ -1022,85 +1175,101 @@ class DigitalRain {
 
         // ── STEP 2: Per-cell render with Uint8Array row tracking ───────────
         for (let i = 0; i < numCols; i++) {
-            const col     = this._cols[i];
-            const x       = i * fw;
+            const col = this._cols[i];
+            const x   = i * fw;
 
             if (!col.curRows)  col.curRows  = new Uint8Array(maxRow);
             if (!col.prevRows) col.prevRows = new Uint8Array(maxRow);
 
-            col.curRows.fill(0);
-            for (let s = 0; s < col.streams.length; s++) {
-                const trails = col.streams[s].trails;
-                for (let t = 0; t < trails.length; t++) {
-                    const r = trails[t].row;
-                    if (r < maxRow) col.curRows[r] = 1;
+            // Skip row tracking for dormant columns
+            if (!col.dormant) {
+                col.curRows.fill(0);
+                const nStreams = col.streams.length;
+                for (let s = 0; s < nStreams; s++) {
+                    const trails  = col.streams[s].trails;
+                    const nTrails = trails.length;
+                    for (let t = 0; t < nTrails; t++) {
+                        const r = trails[t].row;
+                        if (r < maxRow) col.curRows[r] = 1;
+                    }
                 }
-            }
-
-            ctx.fillStyle = bgColor;
-            for (let r = 0; r < maxRow; r++) {
-                if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
+                ctx.fillStyle = bgColor;
+                for (let r = 0; r < maxRow; r++) {
+                    if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
+                }
             }
 
             const colDelta = burstActive && burstEpicenter >= 0 ? i - burstEpicenter : 0;
             let colBIntens = 0;
             if (burstActive && burstEpicenter >= 0 && this._burstNoise) {
-                const absDelta   = colDelta < 0 ? -colDelta : colDelta;
+                const absDelta    = colDelta < 0 ? -colDelta : colDelta;
                 const noiseThresh = this._burstNoise[i] ?? 1;
-                // Column is alive only if progress hasn't reached its dropout threshold
                 if (absDelta <= burstReach && progress < noiseThresh) {
                     const reach_t = 1 - absDelta / burstReach;
                     colBIntens = reach_t * reach_t;
                 }
             }
 
-            for (let s = 0; s < col.streams.length; s++) {
+            // Hoist burst bolt row calc out of per-trail loop
+            const jagOff  = burstActive && burstJagArr ? burstJagArr[i] : 0;
+            const boltRow = burstActive ? burstEpicenterRow + burstAngle * colDelta + jagOff : 0;
+            const bMaxDist = burstWidth * 4;
+
+            const nStreams = col.streams.length;
+
+            // ── Pass 1: batch all background clears ───────────────────────
+            // Set fillStyle once, clear every trail cell and head cell in one pass.
+            // This avoids toggling fillStyle back to bgColor inside the text loop.
+            ctx.fillStyle = bgColor;
+            for (let s = 0; s < nStreams; s++) {
                 const st      = col.streams[s];
                 const trails  = st.trails;
-                const headIdx = st.active ? trails.length - 1 : -1;
+                const nTrails = trails.length;
+                const headIdx = st.active ? nTrails - 1 : -1;
+                for (let t = 0; t < nTrails; t++) {
+                    const e   = trails[t];
+                    const row = dirUp ? (maxRow - 1 - e.row) : e.row;
+                    const cy  = row * fw;
+                    if (t === headIdx) {
+                        ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
+                    } else {
+                        ctx.fillRect(x, cy, fw, fw);
+                    }
+                }
+            }
 
-                for (let t = 0; t < trails.length; t++) {
+            // ── Pass 2: draw all text ─────────────────────────────────────
+            for (let s = 0; s < nStreams; s++) {
+                const st      = col.streams[s];
+                const trails  = st.trails;
+                const nTrails = trails.length;
+                const headIdx = st.active ? nTrails - 1 : -1;
+                const stSteps = st.steps;
+
+                for (let t = 0; t < nTrails; t++) {
                     const e   = trails[t];
                     const row = dirUp ? (maxRow - 1 - e.row) : e.row;
                     const cy  = row * fw;
 
-                    // Per-entry lightning intensity — row falloff around jagged bolt path
                     let bIntens = 0;
                     if (colBIntens > 0) {
-                        const jag     = this._burstJag;
-                        const jagOff  = jag ? jag[i] : 0;
-                        const boltRow = burstEpicenterRow + burstAngle * colDelta + jagOff;
                         const rowDist = e.row - boltRow;
                         const absDist = rowDist < 0 ? -rowDist : rowDist;
-                        if (absDist < burstWidth * 4) {
-                            // Gaussian falloff around bolt path
-                            const bw2 = burstWidth * burstWidth;
-                            const rowFalloff = Math.exp(-(rowDist * rowDist) / (2 * bw2));
-                            bIntens = colBIntens * rowFalloff;
+                        if (absDist < bMaxDist) {
+                            bIntens = colBIntens * (burstFalloffLUT[absDist | 0] || 0);
                         }
                     }
 
-                    const whiten    = bIntens * bIntens; // quadratic push to white at peak
-                    const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
-
-                    ctx.fillStyle = bgColor;
-                    ctx.fillRect(x, cy, fw, fw);
-
                     if (t === headIdx) {
-                        ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                         if (bIntens > 0) {
-                            // Glow pass: theme color at burst intensity
-                            const gR = Math.min(255, bR * bIntens | 0);
-                            const gG = Math.min(255, bG * bIntens | 0);
-                            const gB = Math.min(255, bB * bIntens | 0);
-                            ctx.fillStyle = `rgba(${gR},${gG},${gB},${glowAlpha})`;
+                            const lutIdx    = Math.min(255, bIntens * 255 | 0);
+                            const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
+                            ctx.fillStyle = burstGlowLUT[lutIdx] + glowAlpha + ')';
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
                             ctx.fillText(e.char, x + 1, cy + fw - 2);
                             ctx.fillText(e.char, x,     cy + fw - 3);
                             ctx.fillText(e.char, x,     cy + fw - 1);
-                            // Head: theme color pushed toward white at peak
-                            const boost = whiten * 255 | 0;
-                            ctx.fillStyle = `rgb(${Math.min(255, gR + boost)},${Math.min(255, gG + boost)},${Math.min(255, gB + boost)})`;
+                            ctx.fillStyle = burstHeadLUT[lutIdx];
                         } else {
                             ctx.fillStyle = glowLUT;
                             ctx.fillText(e.char, x - 1, cy + fw - 2);
@@ -1111,15 +1280,10 @@ class DigitalRain {
                         }
                         ctx.fillText(e.char, x, cy + fw - 2);
                     } else {
-                        const cl1 = e.brightness / st.steps;
+                        const cl1 = e.brightness / stSteps;
                         const cl  = cl1 > 1 ? 1 : cl1;
                         if (bIntens > 0) {
-                            // Trail: theme color brightened by burst intensity
-                            const boost = whiten * 255 | 0;
-                            const tr = Math.min(255, (cl * cl * bR | 0) + (bIntens * bR | 0) + boost);
-                            const tg = Math.min(255, (cl * cl * bG | 0) + (bIntens * bG | 0) + boost);
-                            const tb = Math.min(255, (cl * cl * bB | 0) + (bIntens * bB | 0) + boost);
-                            ctx.fillStyle = `rgb(${tr},${tg},${tb})`;
+                            ctx.fillStyle = burstColorLUT[Math.min(255, bIntens * 255 | 0)];
                         } else {
                             ctx.fillStyle = greenLUT[cl * cl * 255 | 0];
                         }
