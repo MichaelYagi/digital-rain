@@ -16,6 +16,19 @@ jobs:
       - name: Checkout digital-rain repo
         uses: actions/checkout@v5
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install test dependencies
+        run: npm install
+        working-directory: tests
+
+      - name: Run tests
+        run: npm test
+        working-directory: tests
+
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5
         with:
