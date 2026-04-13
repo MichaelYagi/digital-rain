@@ -2,7 +2,7 @@
 
 Demo [here](https://michaelyagi.github.io/digital-rain/demo.html).
 
-Digital rain with lightning burst effects, color themes, event callbacks, and live configuration.
+Digital rain with lightning burst effects, color themes, event callbacks, parallax depth layers, and live configuration.
 No dependencies. Single file. Rendering runs in a Web Worker via OffscreenCanvas for smooth, main-thread-free animation.
 
 > **Browser support:** Requires OffscreenCanvas + Web Workers. All modern browsers (Chrome, Firefox, Edge, Safari 16.4+). Not supported in IE.
@@ -30,15 +30,13 @@ No dependencies. Single file. Rendering runs in a Web Worker via OffscreenCanvas
 ## Canvas and z-index
 
 The canvas is injected as `position: absolute; z-index: 9999` inside the container.
-Content inside the container at a lower z-index will show through where the rain isn't drawing.
+Content inside the container at a lower z-index will show through.
 
 ```html
 <div id="rain" style="position:relative;">
     <p style="position:relative; z-index:1;">This text shows through the rain.</p>
 </div>
 ```
-
-To hide existing content while the rain runs, use `hideChildren: true` — see options below.
 
 ---
 
@@ -55,92 +53,63 @@ new DigitalRain('#container', {
     bgColor:          '#050505',
     glowAlpha:        0.6,    // glow intensity on stream heads (0–1)
     fontFamily:       '"Share Tech Mono", "Courier New", monospace',
-
-    // Character set — any string; each character is used with equal probability
     chars:            'アイウエオカキクケコ...0123456789ABCDEF',
-
-    // Color theme: 'green' | 'red' | 'blue' | 'white' | 'amber' | '#rrggbb' | '#rgb' | any CSS color name
-    // Named themes use hand-tuned glow/burst colors.
-    // Hex strings and CSS color names ('cyan', 'hotpink', etc.) derive all colors automatically.
-    // Unrecognised values log a console warning and fall back to green.
-    theme:            'green',
-
-    // Glow/head color override — decouples the stream head and glow from the trail color.
-    // Accepts any CSS color string. null = derived from theme (default).
-    // Trail color and burst flash are unaffected.
-    glowColor:        null,
-
-    // Canvas opacity (0–1) — useful for layering rain behind other content
-    opacity:          1,
-
-    // Fraction of columns that are active (0–100)
-    // Lower values create a sparser, more spread-out look
-    density:          100,
-
-    // Drop direction: 'down' | 'up'
-    direction:        'down',
+    theme:            'green', // 'green'|'red'|'blue'|'white'|'amber'|'#rrggbb'|any CSS color
+    glowColor:        null,   // head/glow color override. null = derived from theme.
+    opacity:          1,      // canvas opacity (0–1)
+    density:          100,    // fraction of columns active (0–100)
+    direction:        'down', // 'down' | 'up'
 
     // ── Speed ─────────────────────────────────────────────────────────────
     dropSpeed:        98,     // 0=frozen, 1=barely moving, 100=fastest
-
-    // Speed tiers — weighted random selection per column.
-    // frameSkip: frames between row steps (lower = faster)
-    // weight: relative probability (doesn't need to sum to 100)
     speedTiers: [
-        { frameSkip: 2,  weight: 50 },   // fast
-        { frameSkip: 4,  weight: 42 },   // medium
-        { frameSkip: 10, weight: 4  },   // slow
-        { frameSkip: 13, weight: 4  },   // very slow
+        { frameSkip: 2,  weight: 50 },
+        { frameSkip: 4,  weight: 42 },
+        { frameSkip: 10, weight: 4  },
+        { frameSkip: 13, weight: 4  },
     ],
 
     // ── Trails ────────────────────────────────────────────────────────────
-    trailLengthFast:  28,     // trail length for fastest columns
-    trailLengthSlow:  70,     // trail length for slowest columns
+    trailLengthFast:  28,
+    trailLengthSlow:  70,
 
     // ── Dual streams ──────────────────────────────────────────────────────
-    dualFrequency:    50,     // 0=never, 100=very frequent second stream per column
-    dualMinGap:       10,     // min row gap between two streams in same column
+    dualFrequency:    50,     // 0=never, 100=very frequent
+    dualMinGap:       10,
 
     // ── Bursts ────────────────────────────────────────────────────────────
-    burst:            true,   // enable/disable automatic lightning bursts
-    burstDurationMin: 3,      // seconds — how long each burst lasts
+    burst:            true,
+    burstDurationMin: 3,
     burstDurationMax: 7,
-    burstIntervalMin: 30,     // seconds between automatic bursts
+    burstIntervalMin: 30,
     burstIntervalMax: 60,
-    burstFirstMin:    20,     // seconds before the first burst fires
+    burstFirstMin:    20,
     burstFirstMax:    40,
-    burstWidth:       10,     // row half-width of the bolt (Gaussian falloff)
-    burstReach:       140,    // how many columns the bolt extends left/right
-    burstAngle:       0.25,   // row drift per column (steepness of the bolt)
+    burstWidth:       10,
+    burstReach:       140,
+    burstAngle:       0.25,
+    tapToBurst:       false,  // click/tap canvas to burst at that position
 
-    // ── Tap to burst ──────────────────────────────────────────────────────
-    tapToBurst:       false,  // click/tap canvas to trigger burst at that position
+    // ── Content ───────────────────────────────────────────────────────────
+    hideChildren:     false,  // hide container children on start, restore on stop
+    fadeOutDuration:  0,      // seconds to fade before unmounting. 0 = instant.
 
-    // ── Content visibility ────────────────────────────────────────────────
-    // When true: hides direct children of the container on start,
-    // blacks out the background, and restores children on stop()
-    hideChildren:     false,
+    // ── Intro ─────────────────────────────────────────────────────────────
+    introDepth:       50,     // 0=no intro, 50=halfway, 100=full depth
+    introSpeed:       98,     // pioneer drop speed (0–100, independent of dropSpeed)
 
-    // ── Fade out ──────────────────────────────────────────────────────────
-    // Seconds to fade the canvas opacity before unmounting on stop()
-    // 0 = instant hard cut
-    fadeOutDuration:  0,
+    // ── Parallax depth layers ─────────────────────────────────────────────
+    layers:           null,   // array of per-layer config objects. null = single layer.
 
-    // ── Intro sequence ────────────────────────────────────────────────────
-    introDepth:       50,     // 0=no intro (all drops start at once),
-                              // 50=pioneer drops to halfway, 100=pioneer drops to bottom
-    introSpeed:       98,     // speed of the pioneer drop: 0=frozen, 100=fastest
-                              // independent of dropSpeed
-
-    // ── Event callbacks ───────────────────────────────────────────────────
+    // ── Events ────────────────────────────────────────────────────────────
     on: {
-        start:         () => {},           // rain mounted and running
-        stop:          () => {},           // rain fully stopped and unmounted
-        pause:         () => {},           // animation frozen (canvas stays)
-        resume:        () => {},           // animation unfrozen
-        introComplete: () => {},           // pioneer drop finished, full rain begun
-        burstStart:    ({ epicenter }) => {}, // burst fired; epicenter = column index
-        burstEnd:      () => {},           // burst finished
+        start:         () => {},
+        stop:          () => {},
+        pause:         () => {},
+        resume:        () => {},
+        introComplete: () => {},
+        burstStart:    ({ epicenter }) => {},
+        burstEnd:      () => {},
     },
 
 })
@@ -154,323 +123,240 @@ new DigitalRain('#container', {
 const rain = new DigitalRain('#el', options);
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
-rain.start()              // mount canvas and begin (respects startDelay)
-rain.stop()               // stop, remove canvas, restore children if hideChildren was set
-rain.destroy()            // alias for stop()
+rain.start()              // mount canvas and begin
+rain.stop()               // stop, remove canvas, restore children
+rain.destroy()            // alias for stop(); also removes from registry
+rain.pause()              // freeze animation (canvas stays)
+rain.resume()             // unfreeze; falls back to start() if not running
 
-// ── State inspection ──────────────────────────────────────────────────────
+// ── State ─────────────────────────────────────────────────────────────────
 rain.isRunning()          // true if started and not stopped (includes paused)
 rain.isPaused()           // true if currently paused
 rain.getConfig()          // shallow clone of current config (callbacks excluded)
-await rain.getStats()     // Promise → live stats: frame, fps, columns, activeColumns,
-                          //   dormantColumns, streams, burstActive, burstEpicenter,
-                          //   paused, booting
-
-// ── Playback ──────────────────────────────────────────────────────────────
-rain.pause()              // freeze animation in place (canvas stays, state preserved)
-rain.resume()             // unfreeze; falls back to start() if not yet running
+await rain.getStats()     // Promise → { frame, fps, columns, activeColumns,
+                          //   dormantColumns, streams, burstActive, paused, booting }
 
 // ── Configuration ─────────────────────────────────────────────────────────
 rain.configure(options)   // update any options live — no restart needed
-                          // chars and theme changes take effect immediately
+rain.randomize(overrides?) // randomize visuals and restart. Returns applied config.
+rain.triggerBurst(col?)   // fire a burst (col = column index, omit for random)
 
-// ── Bursts ────────────────────────────────────────────────────────────────
-rain.triggerBurst(col?)   // fire a burst manually (col = column index, omit for random)
+// ── Events ────────────────────────────────────────────────────────────────
+rain.on(event, fn)        // register callback. Overwrites previous handler.
 
-// ── Randomize ─────────────────────────────────────────────────────────────
-rain.randomize(overrides?)  // randomize visuals and restart. Returns applied config.
-                             // picks from DigitalRain.CHARSETS, uses HSL for vivid color
-                             // dropSpeed, introSpeed, speedTiers not touched
-                             // pass overrides to lock specific values:
-                             //   rain.randomize({ chars: DigitalRain.CHARSETS.binary })
-
-// ── Events (fluent alternative to the on: {} option) ──────────────────────
-rain.on('burstStart', ({ epicenter }) => console.log(epicenter))
-rain.on('introComplete', () => console.log('ready'))
+// ── Layers ────────────────────────────────────────────────────────────────
+rain.getLayer(index)      // get a specific layer instance (0=back, 1=mid, 2=front)
+                          // returns null when not in layers mode
 
 // ── Static ────────────────────────────────────────────────────────────────
-DigitalRain.getInstance(el)  // get a running instance by element or selector
-DigitalRain.CHARSETS         // built-in character set map (see Character sets section)
-DigitalRain.OPTIONS          // all options with type, default, and description
-DigitalRain.DEFAULTS         // all default option values
+DigitalRain.getInstance(el)  // get running instance by element or selector
+DigitalRain.CHARSETS         // built-in character set map
+DigitalRain.OPTIONS          // all options with type, default, description
+DigitalRain.DEFAULTS         // all default values
 DigitalRain.help()           // print full reference to the console
 ```
 
 ---
 
+## Parallax depth layers
+
+The `layers` option stacks multiple independent rain layers in the same container for a 3D
+depth effect — small dim rain in the background, full-quality rain in the middle, and large
+fast rain in the foreground.
+
+Each layer is a full `DigitalRain` instance with its own Worker and canvas. Any option that
+works on a single instance works per-layer. All layers share the same direction.
+
+```js
+new DigitalRain('#container', {
+    layers: [
+        // back — small, dim, slightly slow, short trails
+        {
+            fontSize: 8, opacity: 0.25, dropSpeed: 60, density: 70,
+            trailLengthFast: 6, trailLengthSlow: 12,
+            dualFrequency: 0, burst: false, introDepth: 0,
+        },
+        // mid — full quality
+        {
+            fontSize: 14, opacity: 1.0, dropSpeed: 98, density: 100,
+            trailLengthFast: 28, trailLengthSlow: 70, burst: true,
+        },
+        // front — large, fast, short trails, sparse
+        {
+            fontSize: 24, opacity: 0.65, dropSpeed: 98, density: 35,
+            trailLengthFast: 4, trailLengthSlow: 8,
+            dualFrequency: 0, burst: false, introDepth: 0,
+        },
+    ],
+}).start();
+```
+
+**Per-layer configuration after start:**
+
+```js
+rain.getLayer(0).configure({ opacity: 0.1 });   // dim the back layer
+rain.getLayer(2).configure({ theme: 'red' });   // red foreground layer
+rain.configure({ direction: 'up' });            // all layers at once
+```
+
+**Lifecycle methods delegate to all layers:**
+
+```js
+rain.start();   // starts all layers
+rain.pause();   // pauses all layers
+rain.stop();    // stops all layers, removes all canvases
+```
+
+**Performance tips:**
+
+Each layer runs its own Web Worker, so keep back/front layers lean — lower density, shorter
+trails, and `dualFrequency: 0`. The foreground layer can be fast with very short trails (4–8)
+at low density (30–40%) which costs little GPU while still selling the depth effect.
+
+---
+
 ## Color themes
 
-The `theme` option controls trail color, head glow, and burst flash color together. It accepts either a named theme or any hex color string.
-
-**Named themes**
-
-| Value     | Color |
-|-----------|-------|
+| Value | Color |
+|-------|-------|
 | `'green'` | Classic matrix green (default) |
-| `'red'`   | Deep red with orange glow |
-| `'blue'`  | Electric blue |
+| `'red'` | Deep red with orange glow |
+| `'blue'` | Electric blue |
 | `'white'` | Cool white/grey |
 | `'amber'` | Warm amber/gold |
 
-**Hex colors**
-
-Any 3- or 6-digit hex string is accepted. The trail LUT, head color, glow, and burst flash are all derived automatically from the parsed RGB values.
-
-```js
-rain.configure({ theme: '#ff00ff' });  // magenta
-rain.configure({ theme: '#0cf' });     // shorthand cyan
-rain.configure({ theme: '#ff6600' });  // orange
-```
-
-All theme changes take effect immediately via `configure()` — no restart needed for color alone. Call `stop()`/`start()` if you also want to reset the intro.
-
-Unrecognised values log a console warning and fall back to green.
+Any hex string (`'#ff00ff'`, `'#0cf'`) or CSS color name is also accepted.
+Unrecognised values fall back to green with a console warning.
 
 ```js
-rain.configure({ theme: 'blue' });
-```
-
-**Glow color**
-
-`glowColor` decouples the stream head and glow from the trail color. The trail LUT and burst flash color remain derived from `theme` — only the bright head pixel and surrounding glow change.
-
-```js
-// Green trails, white-hot heads
-rain.configure({ theme: 'green', glowColor: 'white' });
-
-// Dark red trails, cyan glow
-rain.configure({ theme: 'red', glowColor: '#00ffff' });
-
-// HSL theme with contrasting glow
-rain.configure({ theme: 'hsl(200, 100%, 50%)', glowColor: 'hsl(40, 100%, 75%)' });
-
-// Remove override — glow reverts to theme-derived
-rain.configure({ glowColor: null });
+rain.configure({ theme: '#ff6600' });
+rain.configure({ theme: 'green', glowColor: 'white' });  // green trails, white heads
+rain.configure({ glowColor: null });                      // revert glow to theme default
 ```
 
 ---
 
 ## Character sets
 
-`chars` accepts any string. Each character is sampled with equal probability.
+`DigitalRain.CHARSETS` provides 16 built-in sets:
 
-Built-in charsets are available via `DigitalRain.CHARSETS`:
-
-| Key          | Description |
-|--------------|-------------|
-| `katakana`   | Japanese Katakana + hex digits (default) |
-| `hiragana`   | Japanese Hiragana + digits |
-| `binary`     | `01` |
-| `hex`        | `0–9 A–F` |
-| `latin`      | A–Z a–z 0–9 + punctuation |
-| `greek`      | Greek alphabet + math symbols |
-| `russian`    | Cyrillic alphabet |
-| `runic`      | Elder Futhark runes |
-| `hangul`     | Korean syllables |
-| `arabic`     | Arabic alphabet + digits |
-| `braille`    | Braille patterns |
-| `box`        | Box-drawing characters |
-| `math`       | Mathematical operators and symbols |
-| `symbols`    | ASCII punctuation + special characters |
-| `blocks`     | Block and geometric shapes |
-| `emoticons`  | Miscellaneous symbols and dingbats |
+| Key | Description |
+|-----|-------------|
+| `katakana` | Japanese Katakana + hex digits (default) |
+| `hiragana` | Japanese Hiragana + digits |
+| `binary` | `01` |
+| `hex` | `0–9 A–F` |
+| `latin` | A–Z a–z 0–9 + punctuation |
+| `greek` | Greek alphabet + math symbols |
+| `russian` | Cyrillic alphabet |
+| `runic` | Elder Futhark runes |
+| `hangul` | Korean syllables |
+| `arabic` | Arabic alphabet + digits |
+| `braille` | Braille patterns |
+| `box` | Box-drawing characters |
+| `math` | Mathematical operators |
+| `symbols` | ASCII punctuation + specials |
+| `blocks` | Block and geometric shapes |
+| `emoticons` | Miscellaneous symbols and dingbats |
 
 ```js
-// Use a built-in charset
 rain.configure({ chars: DigitalRain.CHARSETS.braille });
-
-// Use a custom charset
-rain.configure({ chars: '!@#$%^&*()' });
-
-// Mix two charsets
 rain.configure({ chars: DigitalRain.CHARSETS.binary + DigitalRain.CHARSETS.runic });
-```
-
-Character set changes take effect immediately without a restart.
-
----
-
-## Hiding content
-
-When `hideChildren: true`, the library manages visibility of the container's direct children:
-
-- On `start()` — children are hidden (`visibility: hidden`) and the container background is blacked out
-- On `stop()` — children are restored to their original visibility
-
-```js
-new DigitalRain('#hero', {
-    hideChildren: true,
-    fadeOutDuration: 1.5,   // fade out before restoring content
-}).start();
 ```
 
 ---
 
 ## Events
 
-Subscribe via the `on` option at construction or via the fluent `.on()` method at any time.
-
 ```js
-const rain = new DigitalRain('#el', {
-    on: {
-        start:         () => console.log('started'),
-        stop:          () => console.log('stopped'),
-        pause:         () => console.log('paused'),
-        resume:        () => console.log('resumed'),
-        introComplete: () => console.log('intro done'),
-        burstStart:    ({ epicenter }) => console.log('burst at col', epicenter),
-        burstEnd:      () => console.log('burst over'),
-    }
-});
-
-// Or fluently — overwrites the previous handler for that event
-rain.on('burstStart', ({ epicenter }) => highlight(epicenter));
+rain.on('start',         () => {});
+rain.on('stop',          () => {});
+rain.on('pause',         () => {});
+rain.on('resume',        () => {});
+rain.on('introComplete', () => {});
+rain.on('burstStart',    ({ epicenter }) => console.log('col', epicenter));
+rain.on('burstEnd',      () => {});
 ```
-
----
-
-## Pause and resume
-
-`pause()` freezes the animation in place without destroying the canvas or state.
-`resume()` picks up exactly where it left off.
-
-```js
-rain.pause();
-setTimeout(() => rain.resume(), 5000);
-```
-
-`stop()` is a full teardown — canvas is removed, state is reset, children are restored.
-Use `pause()`/`resume()` when you want to freeze temporarily; use `stop()`/`start()` when you want a full reset.
 
 ---
 
 ## Examples
 
-### Full screen, immediate start
+### Full screen
 ```js
 new DigitalRain('#container').start();
 ```
 
+### Parallax depth
+```js
+new DigitalRain('#container', {
+    layers: [
+        { fontSize: 8,  opacity: 0.25, dropSpeed: 60, density: 70,  trailLengthFast: 6,  trailLengthSlow: 12, burst: false, introDepth: 0 },
+        { fontSize: 14, opacity: 1.0,  dropSpeed: 98, density: 100, trailLengthFast: 28, trailLengthSlow: 70, burst: true },
+        { fontSize: 24, opacity: 0.65, dropSpeed: 98, density: 35,  trailLengthFast: 4,  trailLengthSlow: 8,  burst: false, introDepth: 0 },
+    ],
+}).start();
+```
+
+### Per-layer themes
+```js
+const rain = new DigitalRain('#container', {
+    layers: [{ fontSize: 8 }, { fontSize: 14 }, { fontSize: 24 }],
+}).start();
+rain.getLayer(0).configure({ theme: 'blue' });
+rain.getLayer(2).configure({ theme: 'red' });
+```
+
 ### No bursts, slower drops
 ```js
-new DigitalRain('#container', {
-    burst:     false,
-    dropSpeed: 40,
-}).start();
+new DigitalRain('#container', { burst: false, dropSpeed: 40 }).start();
 ```
 
-### Click anywhere to burst at that spot
+### Click to burst
 ```js
-new DigitalRain('#container', {
-    tapToBurst: true,
-}).start();
+new DigitalRain('#container', { tapToBurst: true }).start();
 ```
 
-### Fast frequent bursts (demo/testing)
+### Dramatic slow intro
 ```js
-new DigitalRain('#container', {
-    burstFirstMin:    3,
-    burstFirstMax:    5,
-    burstIntervalMin: 5,
-    burstIntervalMax: 10,
-}).start();
-```
-
-### Dramatic slow intro, then fast rain
-```js
-new DigitalRain('#container', {
-    introDepth: 100,   // pioneer drops all the way to the bottom
-    introSpeed: 20,    // crawls down slowly
-    dropSpeed:  98,    // main rain is fast
-}).start();
+new DigitalRain('#container', { introDepth: 100, introSpeed: 20, dropSpeed: 98 }).start();
 ```
 
 ### Red theme, binary charset, fade on stop
 ```js
-new DigitalRain('#container', {
-    theme:           'red',
-    chars:           '01',
-    fadeOutDuration: 2,
-}).start();
+new DigitalRain('#container', { theme: 'red', chars: '01', fadeOutDuration: 2 }).start();
 ```
 
-### Hide page content while rain runs, restore on stop
+### Hide content while running
 ```js
-new DigitalRain('#hero', {
-    hideChildren:    true,
-    fadeOutDuration: 1,
-    on: { stop: () => console.log('content restored') },
-}).start();
+new DigitalRain('#hero', { hideChildren: true, fadeOutDuration: 1 }).start();
 ```
 
-### Live configure without restart
+### Live configure
 ```js
 const rain = new DigitalRain('#container').start();
-
-rain.configure({ dropSpeed: 30 });        // slow down
-rain.configure({ theme: 'amber' });       // change color
-rain.configure({ burst: false });         // kill bursts
-rain.configure({ chars: '01' });          // switch charset
-rain.configure({ opacity: 0.4 });         // semi-transparent
-rain.configure({ density: 40 });          // sparse columns
-rain.configure({ direction: 'up' });      // reverse direction
+rain.configure({ dropSpeed: 30 });
+rain.configure({ theme: 'amber' });
+rain.configure({ chars: DigitalRain.CHARSETS.binary });
+rain.configure({ direction: 'up' });
+rain.configure({ density: 40 });
+rain.configure({ opacity: 0.4 });
 ```
 
 ### State inspection
 ```js
-if (rain.isRunning() && !rain.isPaused()) {
-    rain.pause();
-}
-
-const cfg = rain.getConfig();
-console.log(cfg.theme, cfg.dropSpeed);
-
-// Live stats — runs in a worker so getStats() is async
 const stats = await rain.getStats();
 console.log(stats.fps, stats.streams, stats.burstActive);
-```
-
-### Semi-transparent overlay
-```js
-new DigitalRain('#overlay', {
-    opacity:  0.35,
-    density:  60,
-    burst:    false,
-}).start();
-```
-
-### Upward rain
-```js
-new DigitalRain('#container', {
-    direction: 'up',
-    introDepth: 0,
-}).start();
-```
-
-### Stop and restart
-```js
-rain.stop();
-setTimeout(() => rain.start(), 3000);
 ```
 
 ---
 
 ## Intro sequence
 
-On start, a single pioneer stream drops down the center column. Once it reaches its
-target depth, the full rain kicks in from the top. The pioneer stream continues
-naturally as part of the full rain.
-
-`introDepth` controls how far the pioneer drop falls before the rest begin:
-- `0` — no intro; all columns start immediately
-- `50` — pioneer drops to the vertical midpoint (default)
-- `100` — pioneer drops all the way to the bottom
-
-`introSpeed` controls the pioneer drop's speed on the same 0–100 scale as `dropSpeed`,
-but independently — so you can make it crawl in dramatically while the main rain runs fast.
-
-Both options can be passed at construction or updated via `configure()`. Since the intro
-is a one-shot on `start()`, call `stop()` then `start()` to replay it with new values.
+On start, a pioneer stream drops down the center column. Once it reaches its target depth,
+the full rain begins. `introDepth` controls how far it falls (0=no intro, 100=full depth).
+`introSpeed` controls its speed independently of `dropSpeed`. Call `stop()` then `start()`
+to replay the intro.
 
 ---
 
@@ -480,5 +366,6 @@ is a one-shot on `start()`, call `stop()` then `start()` to replay it with new v
 digital-rain/
 ├── digital-rain.js   ← library (no dependencies)
 ├── demo.html         ← interactive demo with live controls
-└── README.md
+├── README.md
+└── tests/            ← unit + integration test suites
 ```

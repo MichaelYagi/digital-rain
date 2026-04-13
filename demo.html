@@ -247,6 +247,7 @@
             <button class="tab" onclick="showTab('burst',this)">BURST</button>
             <button class="tab" onclick="showTab('tiers',this)">TIERS</button>
             <button class="tab" onclick="showTab('style',this)">STYLE</button>
+            <button class="tab" onclick="showTab('layers',this)">LAYERS</button>
         </div>
 
         <!-- RAIN tab -->
@@ -463,6 +464,74 @@
                 </div>
             </div>
         </div>
+
+        <!-- LAYERS tab -->
+        <div id="tab-layers" class="tab-panel">
+            <div class="ctrl-col">
+                <div class="ctrl-label">PARALLAX LAYERS</div>
+                <div class="btn-group">
+                    <button class="pill" id="layersToggle" onclick="toggleLayers()">Enable Layers</button>
+                </div>
+                <div style="font-size:0.56rem;color:rgba(0,255,65,0.35);margin-top:0.3rem;max-width:18rem">
+                    3 depth layers: back (small/dim), mid (default), front (large/bright).
+                    Each layer is independent — configure below while layers are active.
+                </div>
+            </div>
+
+            <div class="ctrl-col" id="layerControls" style="display:none">
+                <div class="ctrl-label">BACK LAYER</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">font px</span>
+                    <button class="arr" onclick="stepLayer(0,'rLBFont',-1,'vLBFont',6,24,v=>setLayerCfg(0,{fontSize:v}))">◀</button>
+                    <input type="range" id="rLBFont" min="6" max="24" value="8"
+                           oninput="setVal('vLBFont',this.value); setLayerCfg(0,{fontSize:+this.value})">
+                    <button class="arr" onclick="stepLayer(0,'rLBFont',+1,'vLBFont',6,24,v=>setLayerCfg(0,{fontSize:v}))">▶</button>
+                    <span class="val" id="vLBFont">8</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">opacity</span>
+                    <button class="arr" onclick="stepLayerF(0,'rLBOp',-0.05,'vLBOp',0,1,v=>setLayerCfg(0,{opacity:v}))">◀</button>
+                    <input type="range" id="rLBOp" min="0" max="1" step="0.05" value="0.25"
+                           oninput="setVal('vLBOp',parseFloat(this.value).toFixed(2)); setLayerCfg(0,{opacity:+this.value})">
+                    <button class="arr" onclick="stepLayerF(0,'rLBOp',+0.05,'vLBOp',0,1,v=>setLayerCfg(0,{opacity:v}))">▶</button>
+                    <span class="val" id="vLBOp">0.25</span>
+                </div>
+                <div class="ctrl-label" style="margin-top:0.4rem">MID LAYER</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">font px</span>
+                    <button class="arr" onclick="stepLayer(1,'rLMFont',-1,'vLMFont',8,32,v=>setLayerCfg(1,{fontSize:v}))">◀</button>
+                    <input type="range" id="rLMFont" min="8" max="32" value="14"
+                           oninput="setVal('vLMFont',this.value); setLayerCfg(1,{fontSize:+this.value})">
+                    <button class="arr" onclick="stepLayer(1,'rLMFont',+1,'vLMFont',8,32,v=>setLayerCfg(1,{fontSize:v}))">▶</button>
+                    <span class="val" id="vLMFont">14</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">opacity</span>
+                    <button class="arr" onclick="stepLayerF(1,'rLMOp',-0.05,'vLMOp',0,1,v=>setLayerCfg(1,{opacity:v}))">◀</button>
+                    <input type="range" id="rLMOp" min="0" max="1" step="0.05" value="1"
+                           oninput="setVal('vLMOp',parseFloat(this.value).toFixed(2)); setLayerCfg(1,{opacity:+this.value})">
+                    <button class="arr" onclick="stepLayerF(1,'rLMOp',+0.05,'vLMOp',0,1,v=>setLayerCfg(1,{opacity:v}))">▶</button>
+                    <span class="val" id="vLMOp">1</span>
+                </div>
+                <div class="ctrl-label" style="margin-top:0.4rem">FRONT LAYER</div>
+                <div class="sl-row">
+                    <span class="sl-lbl">font px</span>
+                    <button class="arr" onclick="stepLayer(2,'rLFFont',-1,'vLFFont',12,48,v=>setLayerCfg(2,{fontSize:v}))">◀</button>
+                    <input type="range" id="rLFFont" min="16" max="48" value="24"
+                           oninput="setVal('vLFFont',this.value); setLayerCfg(2,{fontSize:+this.value})">
+                    <button class="arr" onclick="stepLayer(2,'rLFFont',+1,'vLFFont',16,48,v=>setLayerCfg(2,{fontSize:v}))">▶</button>
+                    <span class="val" id="vLFFont">24</span>
+                </div>
+                <div class="sl-row">
+                    <span class="sl-lbl">opacity</span>
+                    <button class="arr" onclick="stepLayerF(2,'rLFOp',-0.05,'vLFOp',0,1,v=>setLayerCfg(2,{opacity:v}))">◀</button>
+                    <input type="range" id="rLFOp" min="0" max="1" step="0.05" value="0.65"
+                           oninput="setVal('vLFOp',parseFloat(this.value).toFixed(2)); setLayerCfg(2,{opacity:+this.value})">
+                    <button class="arr" onclick="stepLayerF(2,'rLFOp',+0.05,'vLFOp',0,1,v=>setLayerCfg(2,{opacity:v}))">▶</button>
+                    <span class="val" id="vLFOp">0.65</span>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ── Toolbar ── -->
@@ -486,7 +555,7 @@
     // Use the library's built-in charset map
     const CHARSETS = DigitalRain.CHARSETS;
 
-    const rain = new DigitalRain('#rain', {
+    let rain = new DigitalRain('#rain', {
         dropSpeed:       98,
         speedTiers: [
             { frameSkip: 2,  weight: 50 },
@@ -690,6 +759,106 @@
                 { frameSkip: 10, weight: +document.getElementById('rT2').value },
                 { frameSkip: 13, weight: +document.getElementById('rT3').value },
             ]});
+    }
+
+    // ── Layers ─────────────────────────────────────────────────────────────
+    let layersActive = false;
+
+    // Default per-layer configs for the parallax effect
+    const LAYER_DEFAULTS = [
+        // back — small font, dim, slightly slow, short trails
+        {
+            fontSize: 8, opacity: 0.25,
+            dropSpeed: 60, density: 70, dualFrequency: 0,
+            trailLengthFast: 6, trailLengthSlow: 12,
+            speedTiers: [
+                { frameSkip: 4,  weight: 50 },
+                { frameSkip: 7,  weight: 40 },
+                { frameSkip: 12, weight: 10 },
+            ],
+            burst: false, introDepth: 0,
+        },
+        // mid — full quality defaults
+        {
+            fontSize: 14, opacity: 1.0,
+            dropSpeed: 98, density: 100, dualFrequency: 50,
+            trailLengthFast: 28, trailLengthSlow: 70,
+            burst: true, introDepth: 50,
+        },
+        // front — large font, fast, short trails, sparse
+        {
+            fontSize: 24, opacity: 0.65,
+            dropSpeed: 98, density: 35, dualFrequency: 0,
+            trailLengthFast: 4, trailLengthSlow: 8,
+            speedTiers: [
+                { frameSkip: 2, weight: 70 },
+                { frameSkip: 3, weight: 30 },
+            ],
+            burst: false, introDepth: 0,
+        },
+    ];
+
+    function toggleLayers() {
+        layersActive = !layersActive;
+        document.getElementById('layersToggle').classList.toggle('active', layersActive);
+        document.getElementById('layerControls').style.display = layersActive ? '' : 'none';
+
+        // Destroy current single instance and replace with layered one (or vice versa)
+        rain.destroy();
+
+        const baseConfig = {
+            dropSpeed:       +document.getElementById('rSpeed').value,
+            dualFrequency:   +document.getElementById('rDual').value,
+            trailLengthFast: +document.getElementById('rTF').value,
+            trailLengthSlow: +document.getElementById('rTS').value,
+            tapToBurst:      document.getElementById('tapToggle').classList.contains('active'),
+            theme:           'green',
+            on: {
+                start:         () => { logEvent('▶ started');  updatePlayBtn(); },
+                stop:          () => { logEvent('■ stopped');  updatePlayBtn(); },
+                introComplete: () => logEvent('✓ intro done'),
+                burstStart:    (d) => logEvent(`⚡ burst col ${d.epicenter}`),
+                burstEnd:      () => logEvent('⚡ burst end'),
+                pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
+                resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
+            },
+        };
+
+        if (layersActive) {
+            rain = new DigitalRain('#rain', Object.assign({}, baseConfig, {
+                layers: [
+                    Object.assign({}, LAYER_DEFAULTS[0], { fontSize: +document.getElementById('rLBFont').value, opacity: +document.getElementById('rLBOp').value }),
+                    Object.assign({}, LAYER_DEFAULTS[1], { fontSize: +document.getElementById('rLMFont').value, opacity: +document.getElementById('rLMOp').value }),
+                    Object.assign({}, LAYER_DEFAULTS[2], { fontSize: +document.getElementById('rLFFont').value, opacity: +document.getElementById('rLFOp').value }),
+                ],
+            }));
+        } else {
+            rain = new DigitalRain('#rain', baseConfig);
+        }
+        rain.start();
+        updatePlayBtn();
+    }
+
+    function setLayerCfg(layerIndex, opts) {
+        if (!layersActive) return;
+        const layer = rain.getLayer(layerIndex);
+        if (layer) layer.configure(opts);
+    }
+
+    function stepLayer(layerIndex, sliderId, delta, valId, min, max, callback) {
+        const el  = document.getElementById(sliderId);
+        const val = Math.min(max, Math.max(min, +el.value + delta));
+        el.value  = val;
+        setVal(valId, val);
+        callback(val);
+    }
+
+    function stepLayerF(layerIndex, sliderId, delta, valId, min, max, callback) {
+        const el  = document.getElementById(sliderId);
+        const val = Math.min(max, Math.max(min, Math.round((+el.value + delta) * 100) / 100));
+        el.value  = val;
+        setVal(valId, val.toFixed(2));
+        callback(val);
     }
 
     // Sync initial toggle states

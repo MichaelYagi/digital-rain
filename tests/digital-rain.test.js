@@ -123,7 +123,7 @@ describe('DEFAULTS', () => {
             'burstWidth','burstReach','burstAngle',
             'tapToBurst','hideChildren','introDepth','introSpeed',
             'theme','glowColor','opacity','density','direction',
-            'fadeOutDuration','on',
+            'fadeOutDuration','on','layers',
         ]) {
             expect(d, `missing: ${key}`).toHaveProperty(key);
         }
@@ -145,6 +145,10 @@ describe('DEFAULTS', () => {
 
     it('burst default is true', () => {
         expect(DigitalRain.DEFAULTS.burst).toBe(true);
+    });
+
+    it('layers default is null', () => {
+        expect(DigitalRain.DEFAULTS.layers).toBeNull();
     });
 });
 
@@ -227,6 +231,107 @@ describe('constructor', () => {
         const el   = makeEl();
         const rain = new DigitalRain(el);
         expect(DigitalRain._registry.get(el)).toBe(rain);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LAYERS
+// ─────────────────────────────────────────────────────────────────────────────
+describe('layers', () => {
+    it('_layers is null when layers option is not set', () => {
+        expect(makeRain()._layers).toBeNull();
+    });
+
+    it('_layers is null when layers is null explicitly', () => {
+        expect(makeRain({ layers: null })._layers).toBeNull();
+    });
+
+    it('creates one child instance per layer config', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        expect(rain._layers).toHaveLength(3);
+    });
+
+    it('each layer is a DigitalRain instance', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l).toBeInstanceOf(DigitalRain);
+        }
+    });
+
+    it('layer configs are applied per-layer', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 22 }] });
+        expect(rain._layers[0].getConfig().fontSize).toBe(9);
+        expect(rain._layers[1].getConfig().fontSize).toBe(22);
+    });
+
+    it('getLayer() returns correct layer by index', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        expect(rain.getLayer(0).getConfig().fontSize).toBe(9);
+        expect(rain.getLayer(1).getConfig().fontSize).toBe(14);
+        expect(rain.getLayer(2).getConfig().fontSize).toBe(22);
+    });
+
+    it('getLayer() returns null when no layers', () => {
+        expect(makeRain().getLayer(0)).toBeNull();
+    });
+
+    it('getLayer() returns null for out-of-bounds index', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }] });
+        expect(rain.getLayer(5)).toBeNull();
+    });
+
+    it('start() starts all layers', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        rain.start();
+        expect(rain._layers.every(l => l.isRunning())).toBe(true);
+    });
+
+    it('stop() stops all layers', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        rain.start();
+        rain.stop();
+        expect(rain._layers.every(l => !l.isRunning())).toBe(true);
+    });
+
+    it('isRunning() true if any layer is running', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.start();
+        expect(rain.isRunning()).toBe(true);
+    });
+
+    it('isPaused() true only when all layers are paused', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.start();
+        rain.pause();
+        expect(rain.isPaused()).toBe(true);
+    });
+
+    it('each layer wrapper div has ascending z-index', () => {
+        const el = makeEl();
+        const rain = new DigitalRain(el, { layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        const wrappers = Array.from(el.children);
+        expect(wrappers[0].style.zIndex).toBe('1');
+        expect(wrappers[1].style.zIndex).toBe('2');
+        expect(wrappers[2].style.zIndex).toBe('3');
+    });
+
+    it('configure() applies to all layers', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.configure({ dropSpeed: 42 });
+        for (const l of rain._layers) {
+            expect(l.getConfig().dropSpeed).toBe(42);
+        }
+    });
+
+    it('destroy() removes all layer wrapper divs', () => {
+        const el   = makeEl();
+        const rain = new DigitalRain(el, { layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+        rain.destroy();
+        expect(el.querySelectorAll(':scope > div').length).toBe(0);
+    });
+
+    it('single-layer array works without error', () => {
+        expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
     });
 });
 
@@ -888,5 +993,13 @@ describe('library structure', () => {
 
     it('_registry is a Map', () => {
         expect(src).toContain('DigitalRain._registry = new Map()');
+    });
+
+    it('layers option is in DEFAULTS', () => {
+        expect(src).toContain("layers:         null");
+    });
+
+    it('getLayer method is present', () => {
+        expect(src).toContain('getLayer(');
     });
 });

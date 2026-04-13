@@ -483,3 +483,124 @@ test('repeated start/stop cycles do not throw', async ({ page }) => {
     });
     expect(ok).toBe(true);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Layers
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('layers mode creates one canvas per layer', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const canvasCount = await page.evaluate(() =>
+        document.querySelectorAll('#container canvas').length
+    );
+    expect(canvasCount).toBe(3);
+});
+
+test('layers mode all workers running after start', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const allRunning = await page.evaluate(() => window._rain._layers.every(l => l.isRunning()));
+    expect(allRunning).toBe(true);
+});
+
+test('layers isRunning() true while layers are running', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    expect(await page.evaluate(() => window._rain.isRunning())).toBe(true);
+});
+
+test('layers stop() stops all layers and removes canvases', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.stop());
+    const canvasCount = await page.evaluate(() => document.querySelectorAll('#container canvas').length);
+    expect(canvasCount).toBe(0);
+    expect(await page.evaluate(() => window._rain.isRunning())).toBe(false);
+});
+
+test('layers getLayer() returns correct instance', async ({ page }) => {
+    await load(page);
+    const sizes = await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        return [
+            window._rain.getLayer(0).getConfig().fontSize,
+            window._rain.getLayer(1).getConfig().fontSize,
+            window._rain.getLayer(2).getConfig().fontSize,
+        ];
+    });
+    expect(sizes).toEqual([9, 14, 22]);
+});
+
+test('layers configure() propagates to all layers', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.configure({ dropSpeed: 42 }));
+    const speeds = await page.evaluate(() => window._rain._layers.map(l => l.getConfig().dropSpeed));
+    expect(speeds).toEqual([42, 42]);
+});
+
+test('layers getLayer() configure() updates only that layer', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.getLayer(2).configure({ dropSpeed: 1 }));
+    const speeds = await page.evaluate(() => window._rain._layers.map(l => l.getConfig().dropSpeed));
+    expect(speeds[2]).toBe(1);
+    expect(speeds[0]).not.toBe(1);
+    expect(speeds[1]).not.toBe(1);
+});
+
+test('layers destroy() removes all wrapper divs', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.destroy());
+    // Count divs only — excludes the pre-existing #child <p> in the harness
+    const divCount = await page.evaluate(() =>
+        document.querySelectorAll('#container > div').length
+    );
+    expect(divCount).toBe(0);
+});

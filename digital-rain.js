@@ -605,6 +605,36 @@ class DigitalRain {
         this._statsIdCounter = 0;
         this._onResize       = this._handleResize.bind(this);
 
+        // ── Layers ────────────────────────────────────────────────────────
+        // If layers option is an array, create child instances — one per layer.
+        // Each child gets a wrapper div positioned to fill the container,
+        // stacked via z-index (back=1, mid=2, front=3).
+        // All public methods on this instance delegate to the children.
+        this._layers = null;
+        if (Array.isArray(this._cfg.layers) && this._cfg.layers.length > 0) {
+            this._layers = this._cfg.layers.map((layerCfg, i) => {
+                const wrapper = document.createElement('div');
+                Object.assign(wrapper.style, {
+                    position: 'absolute', inset: '0',
+                    zIndex:   String(i + 1),
+                    pointerEvents: 'none',
+                    willChange: 'transform',
+                });
+                this._el.appendChild(wrapper);
+                // Merge base options (minus layers) with per-layer overrides
+                const base = Object.assign({}, this._cfg);
+                delete base.layers;
+                delete base.hideChildren;
+                delete base.on;
+                const merged = Object.assign({}, base, layerCfg);
+                return new DigitalRain(wrapper, merged);
+            });
+            // Ensure container is positioned so absolute children work
+            if (window.getComputedStyle(this._el).position === 'static') {
+                this._el.style.position = 'relative';
+            }
+        }
+
         DigitalRain._registry.set(this._el, this);
     }
 
@@ -612,6 +642,7 @@ class DigitalRain {
 
     /** Mount canvas and start. Respects startDelay. No-op if already running. */
     start() {
+        if (this._layers) { this._layers.forEach(l => l.start()); this._running = true; return; }
         if (this._running) return;
         this._running = true;
         const ms = (this._cfg.startDelay || 0) * 1000;
@@ -621,6 +652,7 @@ class DigitalRain {
 
     /** Stop, remove canvas, restore hidden children. Respects fadeOutDuration. */
     stop() {
+        if (this._layers) { this._layers.forEach(l => l.stop()); this._running = false; return; }
         if (!this._running) return;
         this._running = false;
         clearTimeout(this._startTimer);
@@ -647,10 +679,18 @@ class DigitalRain {
     }
 
     /** Alias for stop(). Also removes from registry. */
-    destroy() { this.stop(); DigitalRain._registry.delete(this._el); }
+    destroy() {
+        if (this._layers) {
+            this._layers.forEach(l => { l.destroy(); l._el.remove(); });
+            this._layers = null;
+        }
+        this.stop();
+        DigitalRain._registry.delete(this._el);
+    }
 
     /** Freeze in place. No-op if not running or already paused. */
     pause() {
+        if (this._layers) { this._layers.forEach(l => l.pause()); this._paused = true; return; }
         if (!this._running || this._paused) return;
         this._paused = true;
         this._post('pause');
@@ -659,6 +699,7 @@ class DigitalRain {
 
     /** Unfreeze. Falls back to start() if not running. */
     resume() {
+        if (this._layers) { this._layers.forEach(l => l.resume()); this._paused = false; return; }
         if (!this._running) { this.start(); return; }
         if (!this._paused) return;
         this._paused = false;
@@ -667,10 +708,16 @@ class DigitalRain {
     }
 
     /** True if started and not stopped (includes paused). */
-    isRunning() { return this._running; }
+    isRunning() {
+        if (this._layers) return this._layers.some(l => l.isRunning());
+        return this._running;
+    }
 
     /** True if currently paused. */
-    isPaused() { return this._paused; }
+    isPaused() {
+        if (this._layers) return this._layers.every(l => l.isPaused());
+        return this._paused;
+    }
 
     // ── Config & stats ────────────────────────────────────────────────────
 
@@ -699,10 +746,20 @@ class DigitalRain {
     }
 
     /**
-     * Update options live. opacity updates immediately. density/direction reinit columns.
+     * Get an individual layer instance for per-layer configuration.
+     * @param {number} index - 0=back, 1=middle, 2=front
+     * @returns {DigitalRain|null}
+     */
+    getLayer(index) {
+        if (!this._layers) return null;
+        return this._layers[index] || null;
+    }
+
+    /**
      * @param {object} options - Partial options.
      */
     configure(o) {
+        if (this._layers) { this._layers.forEach(l => l.configure(o)); return; }
         Object.assign(this._cfg, o);
         if (o.opacity !== undefined && this._canvas) {
             this._canvas.style.opacity = this._cfg.opacity;
@@ -721,6 +778,7 @@ class DigitalRain {
      * @param {number} [col] - Column index. Random if omitted.
      */
     triggerBurst(col) {
+        if (this._layers) { this._layers.forEach(l => l.triggerBurst(col)); return; }
         this._post('triggerBurst', { col: col != null ? col : null, epicenterRow: null });
     }
 
@@ -731,6 +789,7 @@ class DigitalRain {
      * @returns {DigitalRain} this
      */
     on(event, fn) {
+        if (this._layers) { this._layers.forEach(l => l.on(event, fn)); return this; }
         if (!this._cfg.on) this._cfg.on = {};
         this._cfg.on[event] = fn;
         return this;
@@ -742,6 +801,10 @@ class DigitalRain {
      * @returns {object} Applied config.
      */
     randomize(overrides = {}) {
+        if (this._layers) {
+            const results = this._layers.map(l => l.randomize(overrides));
+            return results[Math.floor(this._layers.length / 2)]; // return middle layer config
+        }
         const rInt   = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
         const rFloat = (a, b, dec=2) => Math.round((Math.random() * (b - a) + a) * 10**dec) / 10**dec;
         const rPick  = (arr) => arr[Math.random() * arr.length | 0];
@@ -863,6 +926,7 @@ class DigitalRain {
             direction:      'down',
             fadeOutDuration: 0,
             on:             {},
+            layers:         null,
         };
     }
 
@@ -901,6 +965,7 @@ class DigitalRain {
             introDepth:       { type: 'number',  default: 50,        description: 'Pioneer drop depth: 0=off, 50=halfway, 100=full' },
             introSpeed:       { type: 'number',  default: 98,        description: 'Pioneer drop speed (0–100)' },
             on:               { type: 'object',  default: '{}',      description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd }' },
+            layers:           { type: 'array',   default: 'null',    description: 'Array of 1–3 layer config objects for parallax depth effect. null = single layer.' },
         };
     }
 
