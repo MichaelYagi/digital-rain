@@ -1,5 +1,7 @@
 # digital-rain
 
+Demo [here](https://michaelyagi.github.io/digital-rain/demo.html).
+
 Digital rain with lightning burst effects, color themes, event callbacks, and live configuration.
 No dependencies. Single file. Rendering runs in a Web Worker via OffscreenCanvas for smooth, main-thread-free animation.
 
