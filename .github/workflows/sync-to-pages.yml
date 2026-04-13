@@ -24,14 +24,11 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Install canvas system dependencies
-        run: sudo apt-get update && sudo apt-get install -y --fix-missing libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
-
       - name: Install test dependencies
         run: cd tests && npm install
 
       - name: Run tests
-        run: cd tests && node node_modules/vitest/vitest.mjs run
+        run: cd tests && node node_modules/vitest/vitest.mjs run --pool=forks
 
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5
