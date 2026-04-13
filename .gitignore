@@ -8,3 +8,4 @@
 /tests/browser/test-local.spec.js
 /tests/browser/node_modules/
 /tests/browser/test-results/
+/tests/test-results/
