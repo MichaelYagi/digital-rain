@@ -398,7 +398,6 @@ class DigitalRain {
             fontSize:         rPick([12, 14, 16, 18, 20]),
 
             // ── Rain ─────────────────────────────────────────────────────
-            density:          rInt(20, 100),
             direction:        rPick(directions),
             dualFrequency:    rInt(0, 100),
             trailLengthFast,
@@ -787,10 +786,24 @@ class DigitalRain {
         const n       = Math.floor(this._canvas.width / this._cfg.fontSize);
         const density = this._cfg.density != null ? Math.max(0, Math.min(100, this._cfg.density)) : 100;
         const center  = Math.floor(n / 2);
+
+        // Build a deterministic dormant set — guarantee exactly floor(n * density/100)
+        // active columns rather than relying on per-column random chance
+        const activeCount = Math.max(1, Math.floor(n * density / 100));
+        // Create index array, shuffle, mark first activeCount as active
+        const indices = Array.from({ length: n }, (_, i) => i);
+        for (let i = n - 1; i > 0; i--) {
+            const j = Math.random() * (i + 1) | 0;
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+        const activeSet = new Set(indices.slice(0, activeCount));
+        // Center column must never be dormant during boot
+        if (this._booting) activeSet.add(center);
+
         this._cols = Array.from({ length: n }, (_, i) => ({
             streams:  [ this._makeStream(this._booting ? 999999 : 60) ],
             spawnCD:  this._dualCooldown(),
-            dormant:  (this._booting && i === center) ? false : Math.random() * 100 >= density,
+            dormant:  !activeSet.has(i),
             mapA:     Object.create(null),
             mapB:     Object.create(null),
             useA:     true,
