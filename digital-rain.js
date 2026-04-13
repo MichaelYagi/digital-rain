@@ -764,19 +764,23 @@ class DigitalRain {
         }
 
         // ── Burst color LUTs ──────────────────────────────────────────────
+        // _burstGlowLUT[i]  — glow pass rgba prefix at intensity i/255
+        // _burstHeadLUT[i]  — head color with quadratic whiten at intensity i/255
+        // _burstBoostLUT[i] — [boost_r, boost_g, boost_b, whiten] for trail mixing
         const [bRc, bGc, bBc] = this._themeColors.burst;
         this._burstGlowLUT  = new Array(256);
         this._burstHeadLUT  = new Array(256);
-        this._burstColorLUT = new Array(256);
+        this._burstBoostLUT = new Array(256); // replaces _burstColorLUT
         for (let i = 0; i < 256; i++) {
             const t  = i / 255;
             const gR = Math.min(255, bRc * t | 0);
             const gG = Math.min(255, bGc * t | 0);
             const gB = Math.min(255, bBc * t | 0);
-            const w  = t * t * 255 | 0;
+            const w  = t * t * 255 | 0; // quadratic whiten at peak
             this._burstGlowLUT[i]  = `rgba(${gR},${gG},${gB},`;
             this._burstHeadLUT[i]  = `rgb(${Math.min(255,gR+w)},${Math.min(255,gG+w)},${Math.min(255,gB+w)})`;
-            this._burstColorLUT[i] = `rgb(${gR},${gG},${gB})`;
+            // Store components for trail mixing: boost = bIntens*bR, whiten = w
+            this._burstBoostLUT[i] = [gR, gG, gB, w];
         }
     }
 
@@ -1088,7 +1092,8 @@ class DigitalRain {
         const burstFalloffLUT = this._burstFalloffLUT;
         const burstGlowLUT    = this._burstGlowLUT;
         const burstHeadLUT    = this._burstHeadLUT;
-        const burstColorLUT   = this._burstColorLUT;
+        const burstBoostLUT   = this._burstBoostLUT;
+        const [bRc, bGc, bBc] = themeColors.burst;
         const burstJagArr     = this._burstJag;
         const dirUp           = cfg.direction === 'up';
 
@@ -1217,9 +1222,8 @@ class DigitalRain {
 
             const nStreams = col.streams.length;
 
-            // ── Pass 1: batch all background clears ───────────────────────
-            // Set fillStyle once, clear every trail cell and head cell in one pass.
-            // This avoids toggling fillStyle back to bgColor inside the text loop.
+            // ── Pass 1: batch all background clears (trail cells only) ───────
+            // Head cell cleared in Pass 2 immediately before its text.
             ctx.fillStyle = bgColor;
             for (let s = 0; s < nStreams; s++) {
                 const st      = col.streams[s];
@@ -1227,14 +1231,10 @@ class DigitalRain {
                 const nTrails = trails.length;
                 const headIdx = st.active ? nTrails - 1 : -1;
                 for (let t = 0; t < nTrails; t++) {
+                    if (t === headIdx) continue; // head cleared in Pass 2
                     const e   = trails[t];
                     const row = dirUp ? (maxRow - 1 - e.row) : e.row;
-                    const cy  = row * fw;
-                    if (t === headIdx) {
-                        ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
-                    } else {
-                        ctx.fillRect(x, cy, fw, fw);
-                    }
+                    ctx.fillRect(x, row * fw, fw, fw);
                 }
             }
 
@@ -1261,6 +1261,9 @@ class DigitalRain {
                     }
 
                     if (t === headIdx) {
+                        // Clear head cell here so it doesn't clobber adjacent trail draws
+                        ctx.fillStyle = bgColor;
+                        ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
                         if (bIntens > 0) {
                             const lutIdx    = Math.min(255, bIntens * 255 | 0);
                             const glowAlpha = cfg.glowAlpha + bIntens * 0.5;
@@ -1283,7 +1286,12 @@ class DigitalRain {
                         const cl1 = e.brightness / stSteps;
                         const cl  = cl1 > 1 ? 1 : cl1;
                         if (bIntens > 0) {
-                            ctx.fillStyle = burstColorLUT[Math.min(255, bIntens * 255 | 0)];
+                            // Restore original formula: cl*cl trail + bIntens boost + quadratic whiten
+                            const boost = burstBoostLUT[Math.min(255, bIntens * 255 | 0)];
+                            const tr = Math.min(255, (cl * cl * bRc | 0) + boost[0] + boost[3]);
+                            const tg = Math.min(255, (cl * cl * bGc | 0) + boost[1] + boost[3]);
+                            const tb = Math.min(255, (cl * cl * bBc | 0) + boost[2] + boost[3]);
+                            ctx.fillStyle = `rgb(${tr},${tg},${tb})`;
                         } else {
                             ctx.fillStyle = greenLUT[cl * cl * 255 | 0];
                         }
