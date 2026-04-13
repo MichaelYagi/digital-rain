@@ -8,19 +8,16 @@ on:
       - 'demo.html'
       - 'digital-rain.js'
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout digital-rain repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Checkout michaelyagi.github.io repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           repository: MichaelYagi/michaelyagi.github.io
           token: ${{ secrets.PAGES_SYNC_TOKEN }}
