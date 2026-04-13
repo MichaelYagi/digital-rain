@@ -19,15 +19,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install test dependencies
-        run: npm install
-        working-directory: tests
+        run: cd tests && npm install
 
       - name: Run tests
-        run: npm test
-        working-directory: tests
+        run: cd tests && npm test
 
       - name: Checkout michaelyagi.github.io repo
         uses: actions/checkout@v5
