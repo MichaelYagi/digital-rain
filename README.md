@@ -1,7 +1,9 @@
 # digital-rain
 
 Digital rain with lightning burst effects, color themes, event callbacks, and live configuration.
-No dependencies. Single file.
+No dependencies. Single file. Rendering runs in a Web Worker via OffscreenCanvas for smooth, main-thread-free animation.
+
+> **Browser support:** Requires OffscreenCanvas + Web Workers. All modern browsers (Chrome, Firefox, Edge, Safari 16.4+). Not supported in IE.
 
 ---
 
@@ -158,6 +160,9 @@ rain.destroy()            // alias for stop()
 rain.isRunning()          // true if started and not stopped (includes paused)
 rain.isPaused()           // true if currently paused
 rain.getConfig()          // shallow clone of current config (callbacks excluded)
+await rain.getStats()     // Promise → live stats: frame, fps, columns, activeColumns,
+                          //   dormantColumns, streams, burstActive, burstEpicenter,
+                          //   paused, booting
 
 // ── Playback ──────────────────────────────────────────────────────────────
 rain.pause()              // freeze animation in place (canvas stays, state preserved)
@@ -172,16 +177,17 @@ rain.triggerBurst(col?)   // fire a burst manually (col = column index, omit for
 
 // ── Randomize ─────────────────────────────────────────────────────────────
 rain.randomize(overrides?)  // randomize visuals and restart. Returns applied config.
-// picks from DigitalRain.CHARSETS, uses HSL for vivid color
-// dropSpeed, introSpeed, introDepth, speedTiers not touched
-// pass overrides to lock specific values:
-//   rain.randomize({ chars: DigitalRain.CHARSETS.binary })
+                             // picks from DigitalRain.CHARSETS, uses HSL for vivid color
+                             // dropSpeed, introSpeed, speedTiers not touched
+                             // pass overrides to lock specific values:
+                             //   rain.randomize({ chars: DigitalRain.CHARSETS.binary })
 
 // ── Events (fluent alternative to the on: {} option) ──────────────────────
 rain.on('burstStart', ({ epicenter }) => console.log(epicenter))
 rain.on('introComplete', () => console.log('ready'))
 
 // ── Static ────────────────────────────────────────────────────────────────
+DigitalRain.getInstance(el)  // get a running instance by element or selector
 DigitalRain.CHARSETS         // built-in character set map (see Character sets section)
 DigitalRain.OPTIONS          // all options with type, default, and description
 DigitalRain.DEFAULTS         // all default option values
@@ -416,6 +422,10 @@ if (rain.isRunning() && !rain.isPaused()) {
 
 const cfg = rain.getConfig();
 console.log(cfg.theme, cfg.dropSpeed);
+
+// Live stats — runs in a worker so getStats() is async
+const stats = await rain.getStats();
+console.log(stats.fps, stats.streams, stats.burstActive);
 ```
 
 ### Semi-transparent overlay
