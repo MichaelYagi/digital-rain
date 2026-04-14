@@ -435,19 +435,64 @@ it('resume() emits resume event from parent in layers mode', () => {
     expect(fired).toBe(true);
 });
 
-it('randomize() enforces direction across all layers', () => {
+it('randomize() makes all layers use the same direction', () => {
     const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
-    // Set a specific direction then randomize — all layers must keep it
-    rain.configure({ direction: 'up' });
     const { warn } = console;
     console.warn = () => {};
     for (let i = 0; i < 10; i++) {
         rain.randomize();
+        const dirs = rain._layers.map(l => l.getConfig().direction);
+        // All layers must have the same direction
+        expect(new Set(dirs).size).toBe(1);
+    }
+    console.warn = warn;
+});
+
+it('randomize() updates parent _cfg.direction in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+    const { warn } = console;
+    console.warn = () => {};
+    rain.randomize();
+    // Parent's direction must match all layers
+    const layerDir = rain._layers[0].getConfig().direction;
+    expect(rain._cfg.direction).toBe(layerDir);
+    console.warn = warn;
+});
+
+it('randomize() direction override is respected in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+    const { warn } = console;
+    console.warn = () => {};
+    for (let i = 0; i < 5; i++) {
+        rain.randomize({ direction: 'up' });
         for (const l of rain._layers) {
             expect(l.getConfig().direction).toBe('up');
         }
+        expect(rain._cfg.direction).toBe('up');
     }
     console.warn = warn;
+});
+
+it('stop() then start() works correctly in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    rain.stop();
+    expect(rain.isRunning()).toBe(false);
+    rain.start();
+    expect(rain.isRunning()).toBe(true);
+    expect(rain._layers.every(l => l.isRunning())).toBe(true);
+});
+
+it('configure({tapToBurst:true}) does not throw in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    expect(() => rain.configure({ tapToBurst: true })).not.toThrow();
+    expect(rain.getConfig().tapToBurst).toBe(true);
+});
+
+it('configure({tapToBurst:false}) does not throw in layers mode', () => {
+    const rain = makeRain({ tapToBurst: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    expect(() => rain.configure({ tapToBurst: false })).not.toThrow();
+    expect(rain.getConfig().tapToBurst).toBe(false);
 });
 
 it('getStats() resolves via middle layer when in layers mode', async () => {

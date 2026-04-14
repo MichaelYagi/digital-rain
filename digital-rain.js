@@ -971,8 +971,12 @@ class DigitalRain {
      */
     randomize(overrides = {}) {
         if (this._layers) {
-            // Enforce direction from parent so all layers randomize consistently
-            const layerOverrides = Object.assign({ direction: this._cfg.direction }, overrides);
+            // Pick a random direction for all layers unless overridden
+            const dir = overrides.direction !== undefined
+                ? overrides.direction
+                : (Math.random() < 0.5 ? 'down' : 'up');
+            this._cfg.direction = dir;
+            const layerOverrides = Object.assign({ direction: dir }, overrides);
             const results = this._layers.map(l => l.randomize(layerOverrides));
             return results[Math.floor(this._layers.length / 2)];
         }

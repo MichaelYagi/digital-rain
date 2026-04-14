@@ -709,8 +709,25 @@ test('layers randomize() keeps same direction on all layers', async ({ page }) =
     await page.evaluate(() => window._rain.randomize());
     await page.waitForTimeout(200);
     const directions = await page.evaluate(() => window._rain._layers.map(l => l.getConfig().direction));
-    // All must be the same
     expect(new Set(directions).size).toBe(1);
+});
+
+test('layers randomize() updates parent _cfg.direction', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.randomize());
+    await page.waitForTimeout(200);
+    const match = await page.evaluate(() => {
+        const parentDir = window._rain._cfg.direction;
+        return window._rain._layers.every(l => l.getConfig().direction === parentDir);
+    });
+    expect(match).toBe(true);
 });
 
 test('layers getStats() returns real data from middle layer', async ({ page }) => {

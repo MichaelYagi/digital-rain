@@ -36,7 +36,7 @@
             pointer-events: none;
         }
 
-        /* ── Event log ───────────────────────────────────── */
+        /* ── Event log ──────────────────────────────────── */
         #eventLog {
             position: fixed;
             top: 0.6rem;
@@ -621,12 +621,24 @@
     }
 
     function togglePlay() {
-        if (!rain.isRunning())  { rain.start();  return; }
+        if (!rain.isRunning())  { rain.start();  updatePlayBtn(); return; }
         if (rain.isPaused())    { rain.resume(); return; }
         rain.pause();
     }
 
-    function restartRain() { rain.stop(); rain.start(); }
+    function restartRain() {
+        if (rain._layers) {
+            rain.destroy();
+            rain = new DigitalRain('#rain', Object.assign({}, buildBaseConfig(), {
+                layers: currentLayerConfigs(),
+            }));
+            rain.start();
+            updatePlayBtn();
+        } else {
+            rain.stop();
+            rain.start();
+        }
+    }
 
     function toggleBurst() {
         const on = !rain.getConfig().burst;
@@ -637,14 +649,17 @@
     function toggleTap() {
         const on = !rain.getConfig().tapToBurst;
         rain.configure({ tapToBurst: on });
-        if (on) {
-            rain._canvas.style.pointerEvents = 'auto';
-            rain._canvas.addEventListener('click',      rain._boundTap);
-            rain._canvas.addEventListener('touchstart', rain._boundTap, { passive: true });
-        } else {
-            rain._canvas.style.pointerEvents = 'none';
-            rain._canvas.removeEventListener('click',      rain._boundTap);
-            rain._canvas.removeEventListener('touchstart', rain._boundTap);
+        // In single-layer mode, also wire/unwire the canvas directly
+        if (!rain._layers && rain._canvas) {
+            if (on) {
+                rain._canvas.style.pointerEvents = 'auto';
+                rain._canvas.addEventListener('click',      rain._boundTap);
+                rain._canvas.addEventListener('touchstart', rain._boundTap, { passive: true });
+            } else {
+                rain._canvas.style.pointerEvents = 'none';
+                rain._canvas.removeEventListener('click',      rain._boundTap);
+                rain._canvas.removeEventListener('touchstart', rain._boundTap);
+            }
         }
         document.getElementById('tapToggle').classList.toggle('active', on);
     }
@@ -705,18 +720,23 @@
 
         function setSlider(id, valId, val) { const el = document.getElementById(id); if(el){ el.value = val; setVal(valId, val); } }
 
-        // Sync sliders
-        setSlider('rDual',    'vDual',    p.dualFrequency);
-        setSlider('rTF',      'vTF',      p.trailLengthFast);
-        setSlider('rTS',      'vTS',      p.trailLengthSlow);
-        setSlider('rBDMin',   'vBDMin',   p.burstDurationMin);
-        setSlider('rBDMax',   'vBDMax',   p.burstDurationMax);
-        setSlider('rBIMin',   'vBIMin',   p.burstIntervalMin);
-        setSlider('rBIMax',   'vBIMax',   p.burstIntervalMax);
-        setSlider('rOpacity', 'vOpacity', p.opacity);
-        setSlider('rDensity', 'vDensity', p.density);
-        setSlider('rIDepth',  'vIDepth',  p.introDepth);
-        setSlider('rFade',    'vFade',    p.fadeOutDuration);
+        // Sync common sliders (always)
+        setSlider('rDual',  'vDual',  p.dualFrequency);
+        setSlider('rTF',    'vTF',    p.trailLengthFast);
+        setSlider('rTS',    'vTS',    p.trailLengthSlow);
+        setSlider('rBDMin', 'vBDMin', p.burstDurationMin);
+        setSlider('rBDMax', 'vBDMax', p.burstDurationMax);
+        setSlider('rBIMin', 'vBIMin', p.burstIntervalMin);
+        setSlider('rBIMax', 'vBIMax', p.burstIntervalMax);
+        setSlider('rIDepth','vIDepth',p.introDepth);
+
+        // In single-layer mode sync opacity/density/fade — in layers mode these
+        // are per-layer so the layer tab controls them independently
+        if (!rain._layers) {
+            setSlider('rOpacity', 'vOpacity', p.opacity);
+            setSlider('rDensity', 'vDensity', p.density);
+            setSlider('rFade',    'vFade',    p.fadeOutDuration);
+        }
 
         // Sync burst toggle
         document.getElementById('burstToggle').classList.toggle('active', p.burst);
@@ -739,6 +759,9 @@
             const charBtn = document.getElementById('char' + matchedKey.charAt(0).toUpperCase() + matchedKey.slice(1));
             if (charBtn) charBtn.classList.add('active');
         }
+
+        // Sync layer sliders if in layers mode
+        syncLayerSliders();
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
@@ -763,6 +786,55 @@
 
     // ── Layers ─────────────────────────────────────────────────────────────
     let layersActive = false;
+
+    function buildBaseConfig() {
+        return {
+            dropSpeed:       +document.getElementById('rSpeed').value,
+            dualFrequency:   +document.getElementById('rDual').value,
+            trailLengthFast: +document.getElementById('rTF').value,
+            trailLengthSlow: +document.getElementById('rTS').value,
+            tapToBurst:      document.getElementById('tapToggle').classList.contains('active'),
+            direction:       document.getElementById('dirUp').classList.contains('active') ? 'up' : 'down',
+            theme:           'green',
+            on: {
+                start:         () => { logEvent('▶ started');  updatePlayBtn(); },
+                stop:          () => { logEvent('■ stopped');  updatePlayBtn(); },
+                introComplete: () => logEvent('✓ intro done'),
+                burstStart:    (d) => logEvent(`⚡ burst col ${d.epicenter}`),
+                burstEnd:      () => logEvent('⚡ burst end'),
+                pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
+                resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
+            },
+        };
+    }
+
+    function currentLayerConfigs() {
+        return [
+            Object.assign({}, LAYER_DEFAULTS[0], { fontSize: +document.getElementById('rLBFont').value, opacity: +document.getElementById('rLBOp').value }),
+            Object.assign({}, LAYER_DEFAULTS[1], { fontSize: +document.getElementById('rLMFont').value, opacity: +document.getElementById('rLMOp').value }),
+            Object.assign({}, LAYER_DEFAULTS[2], { fontSize: +document.getElementById('rLFFont').value, opacity: +document.getElementById('rLFOp').value }),
+        ];
+    }
+
+    function syncLayerSliders() {
+        if (!rain._layers) return;
+        const l0 = rain.getLayer(0), l1 = rain.getLayer(1), l2 = rain.getLayer(2);
+        if (l0) {
+            const c = l0.getConfig();
+            document.getElementById('rLBFont').value = c.fontSize;  setVal('vLBFont', c.fontSize);
+            document.getElementById('rLBOp').value   = c.opacity;   setVal('vLBOp',   (+c.opacity).toFixed(2));
+        }
+        if (l1) {
+            const c = l1.getConfig();
+            document.getElementById('rLMFont').value = c.fontSize;  setVal('vLMFont', c.fontSize);
+            document.getElementById('rLMOp').value   = c.opacity;   setVal('vLMOp',   (+c.opacity).toFixed(2));
+        }
+        if (l2) {
+            const c = l2.getConfig();
+            document.getElementById('rLFFont').value = c.fontSize;  setVal('vLFFont', c.fontSize);
+            document.getElementById('rLFOp').value   = c.opacity;   setVal('vLFOp',   (+c.opacity).toFixed(2));
+        }
+    }
 
     // Default per-layer configs for the parallax effect
     const LAYER_DEFAULTS = [
@@ -803,37 +875,14 @@
         document.getElementById('layersToggle').classList.toggle('active', layersActive);
         document.getElementById('layerControls').style.display = layersActive ? '' : 'none';
 
-        // Destroy current single instance and replace with layered one (or vice versa)
         rain.destroy();
 
-        const baseConfig = {
-            dropSpeed:       +document.getElementById('rSpeed').value,
-            dualFrequency:   +document.getElementById('rDual').value,
-            trailLengthFast: +document.getElementById('rTF').value,
-            trailLengthSlow: +document.getElementById('rTS').value,
-            tapToBurst:      document.getElementById('tapToggle').classList.contains('active'),
-            theme:           'green',
-            on: {
-                start:         () => { logEvent('▶ started');  updatePlayBtn(); },
-                stop:          () => { logEvent('■ stopped');  updatePlayBtn(); },
-                introComplete: () => logEvent('✓ intro done'),
-                burstStart:    (d) => logEvent(`⚡ burst col ${d.epicenter}`),
-                burstEnd:      () => logEvent('⚡ burst end'),
-                pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
-                resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
-            },
-        };
-
         if (layersActive) {
-            rain = new DigitalRain('#rain', Object.assign({}, baseConfig, {
-                layers: [
-                    Object.assign({}, LAYER_DEFAULTS[0], { fontSize: +document.getElementById('rLBFont').value, opacity: +document.getElementById('rLBOp').value }),
-                    Object.assign({}, LAYER_DEFAULTS[1], { fontSize: +document.getElementById('rLMFont').value, opacity: +document.getElementById('rLMOp').value }),
-                    Object.assign({}, LAYER_DEFAULTS[2], { fontSize: +document.getElementById('rLFFont').value, opacity: +document.getElementById('rLFOp').value }),
-                ],
+            rain = new DigitalRain('#rain', Object.assign({}, buildBaseConfig(), {
+                layers: currentLayerConfigs(),
             }));
         } else {
-            rain = new DigitalRain('#rain', baseConfig);
+            rain = new DigitalRain('#rain', buildBaseConfig());
         }
         rain.start();
         updatePlayBtn();
