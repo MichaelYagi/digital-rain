@@ -893,6 +893,7 @@ class DigitalRain {
         const cfg = Object.assign({}, this._cfg);
         if (this._throttleCfg) Object.assign(cfg, this._throttleCfg);
         delete cfg.on;
+        delete cfg._sharedRaf;
         return cfg;
     }
 
@@ -905,6 +906,7 @@ class DigitalRain {
         }
         const cfg = Object.assign({}, this._cfg);
         delete cfg.on;
+        delete cfg._sharedRaf;
         return cfg;
     }
 
@@ -1475,56 +1477,56 @@ class DigitalRain {
         if (!this._cfg.smartThrottle) return;
         this._stopThrottle();
 
-        const FPS_FLOOR = 30;
-        const SAMPLE_MS = 2000;
-        const fpsHistory = [];
+        const FPS_FLOOR = this._cfg.throttleTarget || 45;
+        const SAMPLE_MS = 1000;
 
-        const reduceLayer = (layer) => {
+        const reduceLayer = (layer, urgency) => {
             const cfg = layer._cfg;
             const next = {};
-            if (cfg.trailLengthSlow > 5) next.trailLengthSlow = Math.max(5,  cfg.trailLengthSlow - 8);
-            if (cfg.dualFrequency   > 0) next.dualFrequency   = Math.max(0,  cfg.dualFrequency   - 20);
+            // Scale reduction by urgency (1=mild, 2=bad, 3=severe)
+            const tStep = urgency >= 3 ? 20 : urgency === 2 ? 15 : 8;
+            const dStep = urgency >= 3 ? 50 : urgency === 2 ? 30 : 20;
+            if (cfg.trailLengthSlow > 5) next.trailLengthSlow = Math.max(5,  cfg.trailLengthSlow - tStep);
+            if (cfg.dualFrequency   > 0) next.dualFrequency   = Math.max(0,  cfg.dualFrequency   - dStep);
             if (Object.keys(next).length) { layer.configure(next); return true; }
+            return false;
+        };
+
+        const reduceSingle = (urgency) => {
+            const cfg = this._cfg;
+            const tStep = urgency >= 3 ? 20 : urgency === 2 ? 15 : 8;
+            const dStep = urgency >= 3 ? 50 : urgency === 2 ? 30 : 20;
+            const next = {};
+            if (cfg.trailLengthSlow > 5) next.trailLengthSlow = Math.max(5,  cfg.trailLengthSlow - tStep);
+            if (cfg.dualFrequency   > 0) next.dualFrequency   = Math.max(0,  cfg.dualFrequency   - dStep);
+            if (Object.keys(next).length) { this.configure(next); return true; }
             return false;
         };
 
         this._throttleTimer = setInterval(() => {
             if (!this._running || this._paused) return;
 
-            // In layers mode use main-thread fps — the ground truth.
-            // In single-layer mode fall back to worker fps via getStats.
             if (this._layers) {
                 const fps = this._mainThreadFps || 0;
                 if (fps <= 0) return;
 
-                fpsHistory.push(fps);
-                if (fpsHistory.length > 5) fpsHistory.shift();
-                const avg = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+                // Urgency based on how far below floor
+                const urgency = fps < FPS_FLOOR * 0.5 ? 3 : fps < FPS_FLOOR * 0.75 ? 2 : fps < FPS_FLOOR ? 1 : 0;
 
-                console.log("[smartThrottle layers] fps:", fps, "avg:", Math.round(avg),
-                    this._layers.map(l => "t" + l._cfg.trailLengthSlow + "/d" + l._cfg.dualFrequency).join(","));
-
-                if (fpsHistory.length >= 3 && avg < FPS_FLOOR) {
+                if (urgency > 0) {
                     let anyReduced = false;
-                    this._layers.forEach(l => { if (reduceLayer(l)) anyReduced = true; });
-                    if (anyReduced) this._emit("throttle", { fps: Math.round(avg), action: "reduce" });
+                    this._layers.forEach(l => { if (reduceLayer(l, urgency)) anyReduced = true; });
+                    if (anyReduced) this._emit('throttle', { fps, action: 'reduce', urgency });
                 }
+                // No recovery — permanent reduction
             } else {
                 if (!this._worker) return;
                 this.getStats().then(({ fps }) => {
                     if (!Number.isFinite(fps) || fps <= 0) return;
-                    fpsHistory.push(fps);
-                    if (fpsHistory.length > 5) fpsHistory.shift();
-                    const avg = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
-                    console.log("[smartThrottle single] fps:", fps, "avg:", Math.round(avg));
-                    if (fpsHistory.length >= 3 && avg < FPS_FLOOR) {
-                        const cfg = this._cfg;
-                        const next = {};
-                        if (cfg.trailLengthSlow > 5) next.trailLengthSlow = Math.max(5,  cfg.trailLengthSlow - 8);
-                        if (cfg.dualFrequency   > 0) next.dualFrequency   = Math.max(0,  cfg.dualFrequency   - 20);
-                        if (Object.keys(next).length) {
-                            this.configure(next);
-                            this._emit("throttle", { fps: Math.round(avg), action: "reduce", config: next });
+                    const urgency = fps < FPS_FLOOR * 0.5 ? 3 : fps < FPS_FLOOR * 0.75 ? 2 : fps < FPS_FLOOR ? 1 : 0;
+                    if (urgency > 0) {
+                        if (reduceSingle(urgency)) {
+                            this._emit('throttle', { fps, action: 'reduce', urgency });
                         }
                     }
                 }).catch(() => {});
