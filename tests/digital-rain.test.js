@@ -31,8 +31,9 @@ globalThis.URL.createObjectURL = () => 'blob:mock';
 globalThis.URL.revokeObjectURL = () => {};
 
 let _raf = 0;
-globalThis.requestAnimationFrame = (cb) => { cb(performance.now()); return ++_raf; };
-globalThis.cancelAnimationFrame  = () => {};
+const _rafTimers = new Map();
+globalThis.requestAnimationFrame = (cb) => { const id = ++_raf; _rafTimers.set(id, setTimeout(() => { _rafTimers.delete(id); cb(performance.now()); }, 16)); return id; };
+globalThis.cancelAnimationFrame  = (id) => { clearTimeout(_rafTimers.get(id)); _rafTimers.delete(id); };
 
 HTMLCanvasElement.prototype.transferControlToOffscreen = function () {
     return new OffscreenCanvas(this.width, this.height);
@@ -332,6 +333,13 @@ describe('layers', () => {
 
     it('single-layer array works without error', () => {
         expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
+    });
+
+    it('layer children receive _sharedRaf:true in their config', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l._cfg._sharedRaf).toBe(true);
+        }
     });
 });
 
@@ -748,6 +756,21 @@ describe('getConfig()', () => {
         rain.configure({ dropSpeed: 42 });
         expect(rain.getConfig().dropSpeed).toBe(42);
     });
+
+    it('returns original user values when throttle has reduced density', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        // Simulate throttle reducing density
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60; // throttle reduced it
+        expect(rain.getConfig().density).toBe(100); // getConfig returns original
+    });
+
+    it('getLiveConfig returns actual running values including throttle reductions', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60;
+        expect(rain.getLiveConfig().density).toBe(60); // getLiveConfig returns reduced value
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1160,9 +1183,17 @@ describe('library structure', () => {
     });
 
     it('worker handles all required message types', () => {
-        for (const t of ['init','start','stop','pause','resume','configure','triggerBurst','resize','getStats']) {
+        for (const t of ['init','start','stop','pause','resume','configure','triggerBurst','resize','getStats','tick']) {
             expect(src, `worker missing: case '${t}'`).toContain(`case '${t}'`);
         }
+    });
+
+    it('worker has _sharedRaf flag', () => {
+        expect(src).toContain('_sharedRaf');
+    });
+
+    it('_sharedRafId is initialised in constructor', () => {
+        expect(src).toContain('_sharedRafId    = null');
     });
 
     it('syncTo and unsync are not present', () => {
@@ -1211,8 +1242,8 @@ describe('smartThrottle', () => {
         expect(DigitalRain.DEFAULTS.smartThrottle).toBe(true);
     });
 
-    it('throttleTarget default is 55', () => {
-        expect(DigitalRain.DEFAULTS.throttleTarget).toBe(55);
+    it('throttleTarget default is 45', () => {
+        expect(DigitalRain.DEFAULTS.throttleTarget).toBe(45);
     });
 
     it('_throttleTimer is null before start', () => {
@@ -1239,11 +1270,28 @@ describe('smartThrottle', () => {
         rain.stop();
     });
 
-    it('smartThrottle is not passed to child layers', () => {
+    it('configure() on a throttled key updates _throttleCfg baseline', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        // Simulate active throttle
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60; // throttle reduced it
+        // User explicitly sets density to 70
+        rain.configure({ density: 70 });
+        // Baseline should now be 70, not 100
+        expect(rain._throttleCfg.density).toBe(70);
+    });
+
+    it('configure() on non-throttled key does not affect _throttleCfg', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain.configure({ dropSpeed: 50 });
+        expect(rain._throttleCfg.density).toBe(100);
+    });
+
+    it('smartThrottle is disabled on child layers — parent manages throttle', () => {
         const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
         for (const l of rain._layers) {
-            // Each layer manages its own throttle independently — parent does not set it on them
-            expect(l.getConfig().smartThrottle).toBe(true); // inherits from base, manages own loop
+            expect(l.getConfig().smartThrottle).toBe(false);
         }
     });
 });

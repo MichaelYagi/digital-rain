@@ -103,7 +103,7 @@ new DigitalRain('#container', {
 
     // ── Smart throttle ────────────────────────────────────────────────────
     smartThrottle:    true,   // automatically reduce quality when fps drops
-    throttleTarget:   55,     // fps floor — throttle eases back above throttleTarget+15
+    throttleTarget:   45,     // fps floor — throttle eases back above throttleTarget+15
 
     // ── Events ────────────────────────────────────────────────────────────
     on: {
@@ -137,7 +137,10 @@ rain.resume()             // unfreeze; falls back to start() if not running
 // ── State ─────────────────────────────────────────────────────────────────
 rain.isRunning()          // true if started and not stopped (includes paused)
 rain.isPaused()           // true if currently paused
-rain.getConfig()          // shallow clone of current config (callbacks excluded)
+rain.getConfig()          // shallow clone of current config — returns original user values
+                          //   even when smartThrottle has reduced density/trailLengthSlow/dualFrequency
+rain.getLiveConfig()      // like getConfig() but returns the actual running values including
+                          //   any throttle reductions — useful for debugging smartThrottle
 await rain.getStats()     // Promise → { frame, fps, columns, activeColumns,
                           //   dormantColumns, streams, burstActive, paused, booting }
 
@@ -424,7 +427,7 @@ console.log(fps); // e.g. 75
 `smartThrottle: true` (default) automatically reduces `density`, `trailLengthSlow`, and `dualFrequency` when fps drops below `throttleTarget`, and eases them back up when there's sustained headroom. In layers mode each layer manages its own throttle independently.
 
 ```js
-// Default — on, targeting 55fps floor
+// Default — on, targeting 45fps floor
 new DigitalRain('#container').start();
 
 // Custom target
@@ -436,6 +439,10 @@ new DigitalRain('#container', { smartThrottle: false }).start();
 // Toggle live
 rain.configure({ smartThrottle: false }); // disable and restore original values
 rain.configure({ smartThrottle: true  }); // re-enable
+
+// Calling configure() on a throttled option updates the throttle baseline —
+// the throttle will recover up to the new value, not the original one
+rain.configure({ density: 70 }); // throttle now treats 70 as the ceiling, not 100
 
 // Observe throttle decisions
 rain.on('throttle', ({ fps, action, config }) => {
@@ -484,6 +491,10 @@ rain.configure({
     ]
 });
 ```
+
+**Shared RAF in layers mode:**
+
+In layers mode all layer workers are driven by a single `requestAnimationFrame` loop on the main thread rather than three independent RAF loops inside each worker. This reduces OS thread scheduling overhead and ensures all layers draw in the same 16ms vsync window. It's automatic — no configuration needed.
 
 ---
 

@@ -647,3 +647,51 @@ test('layers hideChildren hides child on start, restores on stop', async ({ page
     await page.evaluate(() => window._rain.stop());
     expect(await page.evaluate(() => document.querySelector('#child').style.visibility)).toBe('');
 });
+test('layers shared RAF — all layers advance frames via single main-thread tick', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }, { fontSize: 22, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const frames1 = await page.evaluate(async () =>
+        Promise.all(window._rain._layers.map(l => l.getStats().then(s => s.frame)))
+    );
+    await page.waitForTimeout(300);
+    const frames2 = await page.evaluate(async () =>
+        Promise.all(window._rain._layers.map(l => l.getStats().then(s => s.frame)))
+    );
+    // All layers should have advanced
+    for (let i = 0; i < 3; i++) {
+        expect(frames2[i]).toBeGreaterThan(frames1[i]);
+    }
+});
+
+test('layers shared RAF — _sharedRafId is set after start', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const hasRaf = await page.evaluate(() => window._rain._sharedRafId !== null);
+    expect(hasRaf).toBe(true);
+});
+
+test('layers shared RAF — _sharedRafId is null after stop', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.stop());
+    const hasRaf = await page.evaluate(() => window._rain._sharedRafId !== null);
+    expect(hasRaf).toBe(false);
+});

@@ -33,6 +33,7 @@ let _greenLUT = null, _themeColors = null;
 let _tierTable = [], _burstFalloffLUT = null;
 let _burstGlowLUT = null, _burstHeadLUT = null, _burstBoostLUT = null;
 let _fpsLastTime = 0, _fps = 0;
+let _sharedRaf = false;
 
 self.onmessage = (e) => {
     const { type, payload } = e.data;
@@ -46,16 +47,18 @@ self.onmessage = (e) => {
         case 'triggerBurst': _triggerBurst(payload.col, payload.epicenterRow); break;
         case 'resize':       _resize(payload.width, payload.height); break;
         case 'getStats':     _replyStats(payload.id); break;
+        case 'tick':         if (_running && !_paused) _drawFrame(); break;
     }
 };
 
 function _post(type, payload) { self.postMessage({ type, payload }); }
 
 function _init({ canvas, cfg }) {
-    _canvas = canvas;
-    _ctx    = canvas.getContext('2d');
-    _cfg    = cfg;
-    _CHARS  = cfg.chars.split('');
+    _canvas    = canvas;
+    _ctx       = canvas.getContext('2d');
+    _cfg       = cfg;
+    _CHARS     = cfg.chars.split('');
+    _sharedRaf = !!cfg._sharedRaf;
 }
 
 function _start() {
@@ -81,7 +84,7 @@ function _pause() {
 function _resume() {
     if (!_running || !_paused) return;
     _paused = false;
-    _rafId = requestAnimationFrame(_drawFrame);
+    if (!_sharedRaf) _rafId = requestAnimationFrame(_drawFrame);
     _post('event', { name: 'resume' });
 }
 
@@ -100,12 +103,13 @@ function _mount() {
         _initColumns();
     }
     _nextBurstFrame = 999999;
-    _rafId = requestAnimationFrame(_drawFrame);
+    if (!_sharedRaf) _rafId = requestAnimationFrame(_drawFrame);
     _post('event', { name: 'start' });
 }
 
 function _unmount() {
     _cols = []; _frameCount = 0;
+    _fpsLastTime = 0; _fps = 0;
     _burstActive = false; _burstTotalFrames = 0;
     _burstEpicenter = -1; _burstEpicenterRow = -1; _burstRadius = 0;
     _burstAngle = 0; _burstNoise = null; _burstJag = null;
@@ -292,8 +296,10 @@ function _triggerBurst(col, epicenterRow) {
 function _drawFrame(now) {
     if (!_ctx || !_canvas) return;
     _frameCount++;
-    if (_fpsLastTime) _fps = Math.round(1000 / (now - _fpsLastTime));
-    _fpsLastTime = now;
+    const ts = (now != null && now > 0) ? now : performance.now();
+    const delta = ts - _fpsLastTime;
+    if (_fpsLastTime && delta > 0) _fps = Math.round(1000 / delta);
+    _fpsLastTime = ts;
 
     const cfg     = _cfg;
     const ctx     = _ctx;
@@ -364,7 +370,7 @@ function _drawFrame(now) {
             _post('event', { name: 'introComplete' });
         }
 
-        _rafId = requestAnimationFrame(_drawFrame);
+        if (!_sharedRaf) _rafId = requestAnimationFrame(_drawFrame);
         return;
     }
 
@@ -572,7 +578,7 @@ function _drawFrame(now) {
         const tmp = col.prevRows; col.prevRows = col.curRows; col.curRows = tmp;
     }
 
-    _rafId = requestAnimationFrame(_drawFrame);
+    if (!_sharedRaf) _rafId = requestAnimationFrame(_drawFrame);
 }
 `;
 
@@ -607,9 +613,10 @@ class DigitalRain {
         this._statsIdCounter = 0;
         this._onResize       = this._handleResize.bind(this);
         this._preExisting    = null;
-        this._throttleTimer  = null;   // smartThrottle interval handle
-        this._throttleCfg    = null;   // original values before throttling
-        this._throttleAbove  = 0;      // consecutive checks above target+15
+        this._throttleTimer  = null;
+        this._throttleCfg    = null;
+        this._throttleAbove  = 0;
+        this._sharedRafId    = null;
 
         // ── Layers ────────────────────────────────────────────────────────
         // If layers option is an array, create child instances — one per layer.
@@ -652,7 +659,9 @@ class DigitalRain {
                 wrapper.dataset.drainWrapper = '1';
                 this._el.appendChild(wrapper);
                 const merged = Object.assign({}, base, layerCfg, {
-                    direction: this._cfg.direction,
+                    direction:     this._cfg.direction,
+                    _sharedRaf:    true,
+                    smartThrottle: false, // parent manages throttle for all layers
                 });
                 return new DigitalRain(wrapper, merged);
             });
@@ -704,6 +713,13 @@ class DigitalRain {
                 // Wire resize to all layers
                 this._onResize = () => this._layers.forEach(l => l._handleResize());
                 window.addEventListener('resize', this._onResize, { passive: true });
+                // Shared RAF — one main-thread loop ticks all layer workers each frame
+                const tick = () => {
+                    if (!this._running) return;
+                    this._layers.forEach(l => { if (l._worker && !l._paused) l._post('tick'); });
+                    this._sharedRafId = requestAnimationFrame(tick);
+                };
+                this._sharedRafId = requestAnimationFrame(tick);
                 // hideChildren — black out container and hide pre-existing children
                 if (this._cfg.hideChildren) {
                     this._el.style.backgroundColor = this._cfg.bgColor;
@@ -744,6 +760,7 @@ class DigitalRain {
             window.removeEventListener('resize', this._onResize);
             const fadeSecs = this._cfg.fadeOutDuration || 0;
             const doStop = () => {
+                if (this._sharedRafId) { cancelAnimationFrame(this._sharedRafId); this._sharedRafId = null; }
                 this._layers.forEach(l => l.stop());
                 if (this._childrenHidden) {
                     this._el.style.backgroundColor = '';
@@ -857,8 +874,24 @@ class DigitalRain {
 
     // ── Config & stats ────────────────────────────────────────────────────
 
-    /** Shallow clone of current config (callbacks excluded). */
+    /** Shallow clone of current config (callbacks excluded).
+     *  When smartThrottle is active, returns the original user values for
+     *  throttled options (density, trailLengthSlow, dualFrequency) rather
+     *  than the currently reduced values. */
     getConfig() {
+        const cfg = Object.assign({}, this._cfg);
+        if (this._throttleCfg) Object.assign(cfg, this._throttleCfg);
+        delete cfg.on;
+        return cfg;
+    }
+
+    /** Returns the live config including any smartThrottle reductions.
+     *  Useful for inspecting what the throttle is currently running at. */
+    getLiveConfig() {
+        if (this._layers) {
+            const mid = this._layers[Math.floor(this._layers.length / 2)];
+            return mid ? mid.getLiveConfig() : this.getConfig();
+        }
         const cfg = Object.assign({}, this._cfg);
         delete cfg.on;
         return cfg;
@@ -930,13 +963,21 @@ class DigitalRain {
             // direction always synced from parent
             if (o.direction !== undefined) layerUpdate.direction = o.direction;
             // strip container-level keys that layers don't manage
-            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers','smartThrottle','throttleTarget'].forEach(k => delete layerUpdate[k]);
+            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers','smartThrottle','throttleTarget','_sharedRaf'].forEach(k => delete layerUpdate[k]);
             this._layers.forEach(l => l.configure(layerUpdate));
             return;
         }
         Object.assign(this._cfg, o);
         if (o.opacity !== undefined && this._canvas) {
             this._canvas.style.opacity = this._cfg.opacity;
+        }
+        // If throttle is active and user is explicitly setting a throttled key,
+        // update the baseline so the throttle recovers to the new user value
+        if (this._throttleCfg) {
+            const THROTTLED = ['density', 'trailLengthSlow', 'dualFrequency'];
+            for (const k of THROTTLED) {
+                if (o[k] !== undefined) this._throttleCfg[k] = o[k];
+            }
         }
         // Handle smartThrottle live toggle
         if (o.smartThrottle !== undefined || o.throttleTarget !== undefined) {
@@ -1125,7 +1166,7 @@ class DigitalRain {
             on:             {},
             layers:         null,
             smartThrottle:  true,
-            throttleTarget: 55,
+            throttleTarget: 45,
         };
     }
 
@@ -1421,50 +1462,72 @@ class DigitalRain {
 
     _startThrottle() {
         if (!this._cfg.smartThrottle) return;
-        // In layers mode each child manages its own throttle — parent doesn't throttle
-        if (this._layers) return;
         this._stopThrottle();
-        // Snapshot the original user values — never exceed these when recovering
-        this._throttleCfg = {
-            density:        this._cfg.density,
-            trailLengthSlow: this._cfg.trailLengthSlow,
-            dualFrequency:  this._cfg.dualFrequency,
-        };
+        // Snapshot original values — in layers mode snapshot the middle layer's values
+        if (this._layers) {
+            const mid = this._layers[Math.floor(this._layers.length / 2)];
+            const mc  = mid ? mid.getConfig() : this._cfg;
+            this._throttleCfg = {
+                density:         mc.density,
+                trailLengthSlow: mc.trailLengthSlow,
+                dualFrequency:   mc.dualFrequency,
+            };
+        } else {
+            this._throttleCfg = {
+                density:         this._cfg.density,
+                trailLengthSlow: this._cfg.trailLengthSlow,
+                dualFrequency:   this._cfg.dualFrequency,
+            };
+        }
         this._throttleAbove = 0;
-        const target  = this._cfg.throttleTarget || 55;
+        const target   = this._cfg.throttleTarget || 45;
         const headroom = target + 15;
+
+        const getCurrent = () => this._layers
+            ? this._layers[Math.floor(this._layers.length / 2)].getConfig()
+            : this._cfg;
+        const applyNext = (next) => {
+            if (this._layers) {
+                this._layers.forEach(l => l.configure(next));
+            } else {
+                this.configure(next);
+            }
+        };
+
         this._throttleTimer = setInterval(async () => {
-            if (!this._running || this._paused || !this._worker) return;
+            if (!this._running || this._paused) return;
+            if (!this._layers && !this._worker) return;
             let fps;
             try { ({ fps } = await this.getStats()); } catch(e) { return; }
-            const cur = this._throttleCfg;
+            const cur  = this._throttleCfg;
+            const live = getCurrent();
             if (fps < target) {
                 this._throttleAbove = 0;
                 const next = {
-                    density:         Math.max(20, this._cfg.density        - 5),
-                    trailLengthSlow: Math.max(5,  this._cfg.trailLengthSlow - 5),
-                    dualFrequency:   Math.max(0,  this._cfg.dualFrequency   - 10),
+                    density:         Math.max(20, live.density         - 5),
+                    trailLengthSlow: Math.max(5,  live.trailLengthSlow - 5),
+                    dualFrequency:   Math.max(0,  live.dualFrequency   - 10),
                 };
-                if (next.density         !== this._cfg.density        ||
-                    next.trailLengthSlow !== this._cfg.trailLengthSlow ||
-                    next.dualFrequency   !== this._cfg.dualFrequency) {
+                if (next.density         !== live.density        ||
+                    next.trailLengthSlow !== live.trailLengthSlow ||
+                    next.dualFrequency   !== live.dualFrequency) {
                     this._emit('throttle', { fps, action: 'reduce', config: next });
-                    this.configure(next);
+                    applyNext(next);
                 }
             } else if (fps > headroom) {
                 this._throttleAbove++;
                 if (this._throttleAbove >= 3) {
                     this._throttleAbove = 0;
                     const next = {
-                        density:         Math.min(cur.density,        this._cfg.density        + 5),
-                        trailLengthSlow: Math.min(cur.trailLengthSlow,this._cfg.trailLengthSlow + 5),
-                        dualFrequency:   Math.min(cur.dualFrequency,  this._cfg.dualFrequency   + 10),
+                        density:         Math.min(cur.density,         live.density         + 5),
+                        trailLengthSlow: Math.min(cur.trailLengthSlow, live.trailLengthSlow + 5),
+                        dualFrequency:   Math.min(cur.dualFrequency,   live.dualFrequency   + 10),
                     };
-                    if (next.density         !== this._cfg.density        ||
-                        next.trailLengthSlow !== this._cfg.trailLengthSlow ||
-                        next.dualFrequency   !== this._cfg.dualFrequency) {
+                    if (next.density         !== live.density        ||
+                        next.trailLengthSlow !== live.trailLengthSlow ||
+                        next.dualFrequency   !== live.dualFrequency) {
                         this._emit('throttle', { fps, action: 'recover', config: next });
-                        this.configure(next);
+                        applyNext(next);
                     }
                 }
             } else {

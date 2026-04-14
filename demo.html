@@ -365,10 +365,10 @@
                 <div class="ctrl-label" style="margin-top:0.3rem">AUTO TARGET fps</div>
                 <div class="sl-row">
                     <button class="arr" onclick="step('rThrottleTarget',-5,'vThrottleTarget',20,120,v=>rain.configure({throttleTarget:v}))">◀</button>
-                    <input type="range" id="rThrottleTarget" min="20" max="120" step="5" value="55"
+                    <input type="range" id="rThrottleTarget" min="20" max="120" step="5" value="45"
                            oninput="setVal('vThrottleTarget',this.value); rain.configure({throttleTarget:+this.value})">
                     <button class="arr" onclick="step('rThrottleTarget',+5,'vThrottleTarget',20,120,v=>rain.configure({throttleTarget:v}))">▶</button>
-                    <span class="val" id="vThrottleTarget">55</span>
+                    <span class="val" id="vThrottleTarget">45</span>
                 </div>
             </div>
         </div>
@@ -591,6 +591,10 @@
     // Use the library's built-in charset map
     const CHARSETS = DigitalRain.CHARSETS;
 
+    // Declared early so throttle callback in on:{} can reference them
+    const fpsStatus = document.getElementById('fpsStatus');
+    let _throttling = false;
+
     let rain = new DigitalRain('#rain', {
         dropSpeed:       98,
         speedTiers: [
@@ -620,28 +624,34 @@
             burstEnd:      () => logEvent('⚡ burst end'),
             pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
             resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
+            throttle:      ({ action }) => {
+                _throttling = action === 'reduce';
+                fpsStatus.classList.toggle('throttling', _throttling);
+                logEvent(_throttling ? '⚠ quality reduced' : '✓ quality restored');
+            },
         },
     });
 
     rain.start();
 
-    // ── FPS status ─────────────────────────────────────────────────────────
-    const fpsStatus = document.getElementById('fpsStatus');
-    let _throttling = false;
-
-    rain.on('throttle', ({ action }) => {
-        _throttling = action === 'reduce';
-        fpsStatus.classList.toggle('throttling', _throttling);
-        logEvent(_throttling ? '⚠ quality reduced' : '✓ quality restored');
-    });
-
+    // ── FPS poll ───────────────────────────────────────────────────────────
     (async function pollStats() {
         while (true) {
             await new Promise(r => setTimeout(r, 500));
-            if (!rain.isRunning() || rain.isPaused()) { fpsStatus.textContent = '— fps'; continue; }
+            if (!rain.isRunning() || rain.isPaused()) {
+                fpsStatus.textContent = '— fps';
+                fpsStatus.classList.remove('throttling');
+                continue;
+            }
             try {
                 const s = await rain.getStats();
-                fpsStatus.textContent = `${s.fps} fps`;
+                const fps = Number.isFinite(s.fps) ? s.fps : '—';
+                if (_throttling) {
+                    const live = rain.getLiveConfig();
+                    fpsStatus.innerHTML = `${fps} fps<br><span style="font-size:0.5rem;opacity:0.8">d:${live.density} t:${live.trailLengthSlow} f:${live.dualFrequency}</span>`;
+                } else {
+                    fpsStatus.textContent = `${fps} fps`;
+                }
             } catch(e) { fpsStatus.textContent = '— fps'; }
         }
     })();
@@ -879,6 +889,11 @@
                 burstEnd:      () => logEvent('⚡ burst end'),
                 pause:         () => { logEvent('⏸ paused');   updatePlayBtn(); },
                 resume:        () => { logEvent('▶ resumed');  updatePlayBtn(); },
+                throttle:      ({ action }) => {
+                    _throttling = action === 'reduce';
+                    fpsStatus.classList.toggle('throttling', _throttling);
+                    logEvent(_throttling ? '⚠ quality reduced' : '✓ quality restored');
+                },
             },
         };
     }
