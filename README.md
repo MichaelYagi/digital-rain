@@ -101,11 +101,6 @@ new DigitalRain('#container', {
     // ── Parallax depth layers ─────────────────────────────────────────────
     layers:           null,   // array of per-layer config objects. null = single layer.
 
-    // ── Transparent canvas ────────────────────────────────────────────────
-    // When true, uses clearRect instead of bgColor fills to erase cells.
-    // Set automatically in layers mode — do not set manually when using layers.
-    transparent:      false,
-
     // ── Events ────────────────────────────────────────────────────────────
     on: {
         start:         () => {},
@@ -228,7 +223,6 @@ Some options apply to the container as a whole and are automatically enforced ac
 | `tapToBurst` | Parent wires a single click handler across all layers |
 | `startDelay` | All layers start together |
 | `fadeOutDuration` | Teardown is coordinated across all layers |
-| `transparent` | Always forced to `true` in layers mode — canvases must be transparent to composite |
 | `on` | Events fire once from the parent, not once per layer |
 
 ```js
@@ -403,6 +397,59 @@ On start, a pioneer stream drops down the center column. Once it reaches its tar
 the full rain begins. `introDepth` controls how far it falls (0=no intro, 100=full depth).
 `introSpeed` controls its speed independently of `dropSpeed`. Call `stop()` then `start()`
 to replay the intro.
+
+---
+
+## Performance
+
+The demo shows a live fps counter in the top-right status box. Use `getStats()` to read it programmatically:
+
+```js
+const { fps } = await rain.getStats();
+console.log(fps); // e.g. 75
+```
+
+**Target:** 60 fps on the display's native refresh rate. Below 60 consistently means the render budget is being exceeded.
+
+**What drives cost:**
+
+The main cost is `fillText` calls per frame. Three options dominate:
+
+- `density` — fraction of columns active. `100` means every column draws every frame.
+- `trailLengthSlow` — maximum trail length for slow columns. Longer trails = more cells drawn per frame.
+- `dualFrequency` — spawns a second stream in the same column. `50` (default) can double active streams. Set to `0` on any layer where you don't need it.
+
+In layers mode, the mid layer at full density and long trails is by far the biggest cost. Back and front layers are cheap by design (low density, short trails).
+
+**Tuning for lower-end hardware:**
+
+```js
+// Single layer — reduce fill work
+rain.configure({ density: 60, trailLengthSlow: 35, dualFrequency: 0 });
+
+// Layers — tune the mid layer, which drives most of the cost
+rain.getLayer(1).configure({ density: 70, trailLengthSlow: 40, dualFrequency: 0 });
+```
+
+**Layers mode quick reference:**
+
+| Layer | Cost driver | Lean defaults |
+|-------|-------------|---------------|
+| Back | Many columns (small font = more cols) | `density: 70, trailLengthSlow: 12, dualFrequency: 0` |
+| Mid | Long trails × full density | `density: 100, trailLengthSlow: 70` — tune these first |
+| Front | Minimal — sparse by design | `density: 35, trailLengthSlow: 8, dualFrequency: 0` |
+
+**`speedTiers`** — higher `frameSkip` values mean columns update less often, directly reducing `fillText` calls per second:
+
+```js
+rain.configure({
+    speedTiers: [
+        { frameSkip: 3,  weight: 50 },
+        { frameSkip: 6,  weight: 42 },
+        { frameSkip: 12, weight: 8  },
+    ]
+});
+```
 
 ---
 
