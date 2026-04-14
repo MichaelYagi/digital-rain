@@ -929,8 +929,10 @@ class DigitalRain {
      */
     randomize(overrides = {}) {
         if (this._layers) {
-            const results = this._layers.map(l => l.randomize(overrides));
-            return results[Math.floor(this._layers.length / 2)]; // return middle layer config
+            // Enforce direction from parent so all layers randomize consistently
+            const layerOverrides = Object.assign({ direction: this._cfg.direction }, overrides);
+            const results = this._layers.map(l => l.randomize(layerOverrides));
+            return results[Math.floor(this._layers.length / 2)];
         }
         const rInt   = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
         const rFloat = (a, b, dec=2) => Math.round((Math.random() * (b - a) + a) * 10**dec) / 10**dec;
