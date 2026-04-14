@@ -74,7 +74,7 @@ Run in jsdom — Worker and OffscreenCanvas are mocked. Fast, no browser needed.
 | `getInstance` | Null before/after, returns instance, accepts selector |
 | `help()` | Does not throw |
 | Constructor | Throws for missing element, accepts element/selector, merges options |
-| Layers | `_layers` null by default, child instances created per config, z-index stacking, `getLayer()`, `configure()` propagation, `destroy()` cleanup, direction enforced from parent, container-level options stripped from layers |
+| Layers | `_layers` null by default, child instances created per config, z-index stacking, `getLayer()`, `configure()` propagation, `destroy()` cleanup, direction enforced from parent, `transparent:true` forced on all layers, container-level options stripped |
 | Lifecycle | Full state machine: start/stop/pause/resume/destroy |
 | Worker communication | Correct messages posted for every method |
 | `getConfig()` | Clone, excludes callbacks, reflects changes |

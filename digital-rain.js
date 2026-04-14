@@ -95,7 +95,7 @@ function _mount() {
         _booting = true;
         const medSkip  = Math.max(1, (_cfg.speedTiers[0] ? _cfg.speedTiers[0].frameSkip : 2) * _introSpeedMult);
         _bootStream    = { row: 0, speed: medSkip, steps: _makeSteps(medSkip), trails: [] };
-        const maxRow   = Math.floor(_canvas.height / _cfg.fontSize);
+        const maxRow   = Math.ceil(_canvas.height / _cfg.fontSize);
         _bootTargetRow = Math.max(1, Math.round((introDepth / 100) * maxRow));
         _initColumns();
     }
@@ -298,11 +298,17 @@ function _drawFrame(now) {
     const cfg     = _cfg;
     const ctx     = _ctx;
     const CHARS   = _CHARS;
-    const maxRow  = Math.floor(_canvas.height / cfg.fontSize);
+    const maxRow  = Math.ceil(_canvas.height / cfg.fontSize);
     const numCols = _cols.length;
     const fw      = cfg.fontSize;
     const bgColor = cfg.bgColor;
+    const transp  = !!cfg.transparent;
     const fc      = _frameCount;
+
+    // Helper: erase a cell — transparent mode uses clearRect, opaque uses bgColor fill
+    const clearCell  = transp
+        ? (x, y, w, h) => ctx.clearRect(x, y, w, h)
+        : (x, y, w, h) => { ctx.fillStyle = bgColor; ctx.fillRect(x, y, w, h); };
 
     // ── Boot phase ────────────────────────────────────────────────────────
     if (_booting && _bootStream) {
@@ -325,8 +331,7 @@ function _drawFrame(now) {
             const e  = bs.trails[t];
             const row = dirUp ? (maxRow - 1 - e.row) : e.row;
             const cy = row * fw;
-            ctx.fillStyle = bgColor;
-            ctx.fillRect(centerX, cy, fw, fw);
+            clearCell(centerX, cy, fw, fw);
             if (t === bs.trails.length - 1) {
                 ctx.fillStyle = _themeColors.glow + cfg.glowAlpha + ')';
                 ctx.fillText(e.char, centerX - 1, cy + fw - 2);
@@ -479,9 +484,8 @@ function _drawFrame(now) {
                 const trails = col.streams[s].trails, nTrails = trails.length;
                 for (let t = 0; t < nTrails; t++) { const r = trails[t].row; if (r < maxRow) col.curRows[r] = 1; }
             }
-            ctx.fillStyle = bgColor;
             for (let r = 0; r < maxRow; r++) {
-                if (col.prevRows[r] && !col.curRows[r]) ctx.fillRect(x, r * fw, fw, fw);
+                if (col.prevRows[r] && !col.curRows[r]) clearCell(x, r * fw, fw, fw);
             }
         }
 
@@ -502,14 +506,13 @@ function _drawFrame(now) {
         const nStreams = col.streams.length;
 
         // Pass 1: batch background clears (trail cells)
-        ctx.fillStyle = bgColor;
         for (let s = 0; s < nStreams; s++) {
             const st = col.streams[s], trails = st.trails, nTrails = trails.length;
             const headIdx = st.active ? nTrails - 1 : -1;
             for (let t = 0; t < nTrails; t++) {
                 if (t === headIdx) continue;
                 const e = trails[t], row = dirUp ? (maxRow - 1 - e.row) : e.row;
-                ctx.fillRect(x, row * fw, fw, fw);
+                clearCell(x, row * fw, fw, fw);
             }
         }
 
@@ -532,8 +535,7 @@ function _drawFrame(now) {
                 }
 
                 if (t === headIdx) {
-                    ctx.fillStyle = bgColor;
-                    ctx.fillRect(x - 1, cy - 1, fw + 2, fw + 2);
+                    clearCell(x - 1, cy - 1, fw + 2, fw + 2);
                     if (bIntens > 0) {
                         const lutIdx = Math.min(255, bIntens * 255 | 0);
                         ctx.fillStyle = burstGlowLUT[lutIdx] + (cfg.glowAlpha + bIntens * 0.5) + ')';
@@ -636,7 +638,7 @@ class DigitalRain {
             }
 
             // Build base config — strip container-level options
-            const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration'];
+            const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration','transparent'];
             const base = Object.assign({}, this._cfg);
             CONTAINER_KEYS.forEach(k => delete base[k]);
 
@@ -644,17 +646,23 @@ class DigitalRain {
                 const wrapper = document.createElement('div');
                 Object.assign(wrapper.style, {
                     position: 'absolute', inset: '0',
+                    width: '100%', height: '100%',
                     zIndex:   String(i + 1),
                     pointerEvents: 'none',
                     willChange: 'transform',
+                    overflow: 'hidden',
                 });
                 this._el.appendChild(wrapper);
-                // Per-layer config merges base, but direction is always enforced from parent
+                // Per-layer config merges base, but direction + transparent always enforced
                 const merged = Object.assign({}, base, layerCfg, {
-                    direction: this._cfg.direction,
+                    direction:   this._cfg.direction,
+                    transparent: true,
                 });
                 return new DigitalRain(wrapper, merged);
             });
+
+            // Container background provides the base colour — all layer canvases are transparent
+            this._el.style.backgroundColor = this._cfg.bgColor;
         }
 
         DigitalRain._registry.set(this._el, this);
@@ -669,7 +677,19 @@ class DigitalRain {
             this._running = true;
             const ms = (this._cfg.startDelay || 0) * 1000;
             const doStart = () => {
-                this._layers.forEach(l => l.start());
+                // Measure container once — forces reflow so all wrappers are laid out.
+                // Use offsetWidth/Height over getBoundingClientRect to avoid subpixel
+                // rounding issues, falling back to window dimensions.
+                const el = this._el;
+                void el.offsetHeight; // force reflow
+                const w = el.offsetWidth  || window.innerWidth;
+                const h = el.offsetHeight || window.innerHeight;
+                // Pass explicit dimensions to each layer to bypass per-wrapper measurement
+                this._layers.forEach(l => {
+                    l._forcedWidth  = w;
+                    l._forcedHeight = h;
+                    l.start();
+                });
                 // Wire tapToBurst at the container level — front layer (last) receives clicks
                 if (this._cfg.tapToBurst) {
                     const topLayer = this._layers[this._layers.length - 1];
@@ -728,6 +748,8 @@ class DigitalRain {
                         }
                     }
                     this._childrenHidden = false;
+                } else if (this._layers) {
+                    this._el.style.backgroundColor = '';
                 }
                 this._paused = false;
                 this._emit('stop');
@@ -861,7 +883,7 @@ class DigitalRain {
             // direction always synced from parent
             if (o.direction !== undefined) layerUpdate.direction = o.direction;
             // strip container-level keys that layers don't manage
-            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers'].forEach(k => delete layerUpdate[k]);
+            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers','transparent'].forEach(k => delete layerUpdate[k]);
             this._layers.forEach(l => l.configure(layerUpdate));
             return;
         }
@@ -1032,6 +1054,7 @@ class DigitalRain {
             fadeOutDuration: 0,
             on:             {},
             layers:         null,
+            transparent:    false,
         };
     }
 
@@ -1071,6 +1094,7 @@ class DigitalRain {
             introSpeed:       { type: 'number',  default: 98,        description: 'Pioneer drop speed (0–100)' },
             on:               { type: 'object',  default: '{}',      description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd }' },
             layers:           { type: 'array',   default: 'null',    description: 'Array of 1–3 layer config objects for parallax depth effect. null = single layer.' },
+            transparent:      { type: 'boolean', default: false,     description: 'Use transparent canvas background. Enables layer compositing. Set automatically in layers mode.' },
         };
     }
 
@@ -1222,9 +1246,20 @@ class DigitalRain {
         }
 
         this._canvas = document.createElement('canvas');
-        const rect   = el.getBoundingClientRect();
-        this._canvas.width  = rect.width  || el.offsetWidth  || el.clientWidth  || window.innerWidth;
-        this._canvas.height = rect.height || el.offsetHeight || el.clientHeight || window.innerHeight;
+        const rect    = el.getBoundingClientRect();
+        const parent  = el.parentElement;
+        // _forcedWidth/Height are set by the parent layers controller to guarantee
+        // all layer canvases get identical dimensions regardless of layout timing
+        const w = this._forcedWidth
+            || rect.width  || el.offsetWidth  || el.clientWidth
+            || (parent && parent.offsetWidth)  || window.innerWidth;
+        const h = this._forcedHeight
+            || rect.height || el.offsetHeight || el.clientHeight
+            || (parent && parent.offsetHeight) || window.innerHeight;
+        this._forcedWidth  = null;
+        this._forcedHeight = null;
+        this._canvas.width  = w;
+        this._canvas.height = h;
 
         Object.assign(this._canvas.style, {
             position: 'absolute', top: '0', left: '0',
@@ -1291,10 +1326,12 @@ class DigitalRain {
 
     _handleResize() {
         if (!this._canvas || !this._worker) return;
-        const rect = this._el.getBoundingClientRect();
-        const w = rect.width  || this._el.offsetWidth  || this._el.clientWidth  || window.innerWidth;
-        const h = rect.height || this._el.offsetHeight || this._el.clientHeight || window.innerHeight;
-        // OffscreenCanvas size is controlled via worker message — can't set it from main thread
+        const rect   = this._el.getBoundingClientRect();
+        const parent = this._el.parentElement;
+        const w = rect.width  || this._el.offsetWidth  || this._el.clientWidth
+            || (parent && parent.offsetWidth)  || window.innerWidth;
+        const h = rect.height || this._el.offsetHeight || this._el.clientHeight
+            || (parent && parent.offsetHeight) || window.innerHeight;
         this._post('resize', { width: w, height: h });
     }
 

@@ -101,6 +101,11 @@ new DigitalRain('#container', {
     // ── Parallax depth layers ─────────────────────────────────────────────
     layers:           null,   // array of per-layer config objects. null = single layer.
 
+    // ── Transparent canvas ────────────────────────────────────────────────
+    // When true, uses clearRect instead of bgColor fills to erase cells.
+    // Set automatically in layers mode — do not set manually when using layers.
+    transparent:      false,
+
     // ── Events ────────────────────────────────────────────────────────────
     on: {
         start:         () => {},
@@ -223,6 +228,7 @@ Some options apply to the container as a whole and are automatically enforced ac
 | `tapToBurst` | Parent wires a single click handler across all layers |
 | `startDelay` | All layers start together |
 | `fadeOutDuration` | Teardown is coordinated across all layers |
+| `transparent` | Always forced to `true` in layers mode — canvases must be transparent to composite |
 | `on` | Events fire once from the parent, not once per layer |
 
 ```js

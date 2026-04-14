@@ -123,7 +123,7 @@ describe('DEFAULTS', () => {
             'burstWidth','burstReach','burstAngle',
             'tapToBurst','hideChildren','introDepth','introSpeed',
             'theme','glowColor','opacity','density','direction',
-            'fadeOutDuration','on','layers',
+            'fadeOutDuration','on','layers','transparent',
         ]) {
             expect(d, `missing: ${key}`).toHaveProperty(key);
         }
@@ -149,6 +149,10 @@ describe('DEFAULTS', () => {
 
     it('layers default is null', () => {
         expect(DigitalRain.DEFAULTS.layers).toBeNull();
+    });
+
+    it('transparent default is false', () => {
+        expect(DigitalRain.DEFAULTS.transparent).toBe(false);
     });
 });
 
@@ -330,56 +334,67 @@ describe('layers', () => {
         expect(el.querySelectorAll(':scope > div').length).toBe(0);
     });
 
-    it('single-layer array works without error', () => {
-        expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
-    });
-
-    it('direction is enforced from parent — layer direction override is ignored', () => {
-        const rain = makeRain({ direction: 'up', layers: [{ fontSize: 9, direction: 'down' }, { fontSize: 14 }] });
-        // All layers must have the parent direction regardless of per-layer override
+    it('all layers get transparent:true automatically', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
         for (const l of rain._layers) {
-            expect(l.getConfig().direction).toBe('up');
+            expect(l.getConfig().transparent).toBe(true);
         }
     });
 
-    it('configure({direction}) propagates to all layers', () => {
-        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        rain.configure({ direction: 'up' });
+    it('transparent cannot be overridden per-layer', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9, transparent: false }, { fontSize: 14 }] });
         for (const l of rain._layers) {
-            expect(l.getConfig().direction).toBe('up');
+            expect(l.getConfig().transparent).toBe(true);
         }
     });
+    expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
+});
 
-    it('startDelay is not passed to individual layers', () => {
-        const rain = makeRain({ startDelay: 5, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        for (const l of rain._layers) {
-            expect(l.getConfig().startDelay).toBe(0);
-        }
-    });
+it('direction is enforced from parent — layer direction override is ignored', () => {
+    const rain = makeRain({ direction: 'up', layers: [{ fontSize: 9, direction: 'down' }, { fontSize: 14 }] });
+    // All layers must have the parent direction regardless of per-layer override
+    for (const l of rain._layers) {
+        expect(l.getConfig().direction).toBe('up');
+    }
+});
 
-    it('fadeOutDuration is not passed to individual layers', () => {
-        const rain = makeRain({ fadeOutDuration: 2, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        for (const l of rain._layers) {
-            expect(l.getConfig().fadeOutDuration).toBe(0);
-        }
-    });
+it('configure({direction}) propagates to all layers', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.configure({ direction: 'up' });
+    for (const l of rain._layers) {
+        expect(l.getConfig().direction).toBe('up');
+    }
+});
 
-    it('tapToBurst is not passed to individual layers', () => {
-        const rain = makeRain({ tapToBurst: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        for (const l of rain._layers) {
-            expect(l.getConfig().tapToBurst).toBe(false);
-        }
-    });
+it('startDelay is not passed to individual layers', () => {
+    const rain = makeRain({ startDelay: 5, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    for (const l of rain._layers) {
+        expect(l.getConfig().startDelay).toBe(0);
+    }
+});
 
-    it('configure() strips container-level keys before passing to layers', () => {
-        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        // fadeOutDuration should not leak into layers via configure
-        rain.configure({ fadeOutDuration: 3, dropSpeed: 50 });
-        for (const l of rain._layers) {
-            expect(l.getConfig().fadeOutDuration).toBe(0);
-            expect(l.getConfig().dropSpeed).toBe(50);
-        }
-    });
+it('fadeOutDuration is not passed to individual layers', () => {
+    const rain = makeRain({ fadeOutDuration: 2, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    for (const l of rain._layers) {
+        expect(l.getConfig().fadeOutDuration).toBe(0);
+    }
+});
+
+it('tapToBurst is not passed to individual layers', () => {
+    const rain = makeRain({ tapToBurst: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    for (const l of rain._layers) {
+        expect(l.getConfig().tapToBurst).toBe(false);
+    }
+});
+
+it('configure() strips container-level keys before passing to layers', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    // fadeOutDuration should not leak into layers via configure
+    rain.configure({ fadeOutDuration: 3, dropSpeed: 50 });
+    for (const l of rain._layers) {
+        expect(l.getConfig().fadeOutDuration).toBe(0);
+        expect(l.getConfig().dropSpeed).toBe(50);
+    }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1044,6 +1059,10 @@ describe('library structure', () => {
 
     it('layers option is in DEFAULTS', () => {
         expect(src).toContain("layers:         null");
+    });
+
+    it('transparent option is in DEFAULTS', () => {
+        expect(src).toContain("transparent:    false");
     });
 
     it('getLayer method is present', () => {
