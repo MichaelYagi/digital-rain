@@ -123,7 +123,7 @@ describe('DEFAULTS', () => {
             'burstWidth','burstReach','burstAngle',
             'tapToBurst','hideChildren','introDepth','introSpeed',
             'theme','glowColor','opacity','density','direction',
-            'fadeOutDuration','on','layers','transparent',
+            'fadeOutDuration','on','layers',
         ]) {
             expect(d, `missing: ${key}`).toHaveProperty(key);
         }
@@ -149,10 +149,6 @@ describe('DEFAULTS', () => {
 
     it('layers default is null', () => {
         expect(DigitalRain.DEFAULTS.layers).toBeNull();
-    });
-
-    it('transparent default is false', () => {
-        expect(DigitalRain.DEFAULTS.transparent).toBe(false);
     });
 });
 
@@ -313,10 +309,10 @@ describe('layers', () => {
     it('each layer wrapper div has ascending z-index', () => {
         const el = makeEl();
         const rain = new DigitalRain(el, { layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
-        const wrappers = Array.from(el.children);
-        expect(wrappers[0].style.zIndex).toBe('1');
-        expect(wrappers[1].style.zIndex).toBe('2');
-        expect(wrappers[2].style.zIndex).toBe('3');
+        const wrappers = Array.from(el.querySelectorAll(':scope > div'));
+        expect(wrappers[0].style.zIndex).toBe('10');
+        expect(wrappers[1].style.zIndex).toBe('11');
+        expect(wrappers[2].style.zIndex).toBe('12');
     });
 
     it('configure() applies to all layers', () => {
@@ -334,20 +330,9 @@ describe('layers', () => {
         expect(el.querySelectorAll(':scope > div').length).toBe(0);
     });
 
-    it('all layers get transparent:true automatically', () => {
-        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
-        for (const l of rain._layers) {
-            expect(l.getConfig().transparent).toBe(true);
-        }
+    it('single-layer array works without error', () => {
+        expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
     });
-
-    it('transparent cannot be overridden per-layer', () => {
-        const rain = makeRain({ layers: [{ fontSize: 9, transparent: false }, { fontSize: 14 }] });
-        for (const l of rain._layers) {
-            expect(l.getConfig().transparent).toBe(true);
-        }
-    });
-    expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
 });
 
 it('direction is enforced from parent — layer direction override is ignored', () => {
@@ -397,11 +382,12 @@ it('configure() strips container-level keys before passing to layers', () => {
     }
 });
 
-it('configure({bgColor}) updates container backgroundColor', () => {
-    const el   = makeEl();
-    const rain = new DigitalRain(el, { layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+it('configure({bgColor}) propagates to all layers', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
     rain.configure({ bgColor: '#ff0000' });
-    expect(el.style.backgroundColor).toBe('rgb(255, 0, 0)');
+    for (const l of rain._layers) {
+        expect(l.getConfig().bgColor).toBe('#ff0000');
+    }
 });
 
 it('on() registers on parent — not delegated to child layers', () => {
@@ -502,15 +488,37 @@ it('getStats() resolves via middle layer when in layers mode', async () => {
     expect(stats).toHaveProperty('columns');
 });
 
+it('hideChildren: true sets container backgroundColor on start', () => {
+    const el    = makeEl();
+    const child = document.createElement('p');
+    el.appendChild(child);
+    const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    expect(el.style.backgroundColor).toBeTruthy();
+    expect(child.style.visibility).toBe('hidden');
+});
+
+it('hideChildren: true clears container backgroundColor on stop', () => {
+    const el    = makeEl();
+    const child = document.createElement('p');
+    el.appendChild(child);
+    const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    rain.stop();
+    expect(el.style.backgroundColor).toBe('');
+    expect(child.style.visibility).toBe('');
+});
+
 it('hideChildren only hides pre-existing children, not layer wrappers', () => {
     const el    = makeEl();
     const child = document.createElement('p');
     el.appendChild(child);
     const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-    // Pre-existing child should be hidden
+    rain.start();
+    // Pre-existing child should be hidden after start()
     expect(child.style.visibility).toBe('hidden');
-    // Wrapper divs should be visible
-    const wrappers = Array.from(el.querySelectorAll(':scope > div'));
+    // Wrapper divs should not be hidden
+    const wrappers = Array.from(el.querySelectorAll(':scope > div[data-drain-wrapper]'));
     for (const w of wrappers) {
         expect(w.style.visibility).not.toBe('hidden');
     }
@@ -522,6 +530,7 @@ it('hideChildren restores pre-existing children on stop in layers mode', () => {
     el.appendChild(child);
     const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
     rain.start();
+    expect(child.style.visibility).toBe('hidden');
     rain.stop();
     expect(child.style.visibility).toBe('');
 });
@@ -1188,10 +1197,6 @@ describe('library structure', () => {
 
     it('layers option is in DEFAULTS', () => {
         expect(src).toContain("layers:         null");
-    });
-
-    it('transparent option is in DEFAULTS', () => {
-        expect(src).toContain("transparent:    false");
     });
 
     it('getLayer method is present', () => {

@@ -606,6 +606,7 @@ class DigitalRain {
         this._statsCallbacks = new Map();
         this._statsIdCounter = 0;
         this._onResize       = this._handleResize.bind(this);
+        this._preExisting    = null;
 
         // ── Layers ────────────────────────────────────────────────────────
         // If layers option is an array, create child instances — one per layer.
@@ -628,10 +629,11 @@ class DigitalRain {
             }
 
             // Snapshot pre-existing children BEFORE appending wrappers
-            const preExisting = Array.from(this._el.children);
+            // Stored on instance so doStart can apply hideChildren at start() time
+            this._preExisting = Array.from(this._el.children);
 
             // Build base config — strip container-level options
-            const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration','transparent'];
+            const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration'];
             const base = Object.assign({}, this._cfg);
             CONTAINER_KEYS.forEach(k => delete base[k]);
 
@@ -640,31 +642,17 @@ class DigitalRain {
                 Object.assign(wrapper.style, {
                     position: 'absolute', inset: '0',
                     width: '100%', height: '100%',
-                    zIndex:   String(i + 1),
+                    zIndex: String(i + 10),
                     pointerEvents: 'none',
-                    willChange: 'transform',
                     overflow: 'hidden',
                 });
+                wrapper.dataset.drainWrapper = '1';
                 this._el.appendChild(wrapper);
-                // Per-layer config merges base, but direction + transparent always enforced
                 const merged = Object.assign({}, base, layerCfg, {
-                    direction:   this._cfg.direction,
-                    transparent: true,
+                    direction: this._cfg.direction,
                 });
                 return new DigitalRain(wrapper, merged);
             });
-
-            // Container background provides the base colour — all layer canvases are transparent
-            this._el.style.backgroundColor = this._cfg.bgColor;
-
-            // Handle hideChildren AFTER wrappers are appended — only hide pre-existing children
-            if (this._cfg.hideChildren) {
-                for (const child of preExisting) {
-                    child.dataset._drainVis = child.style.visibility || '';
-                    child.style.visibility = 'hidden';
-                }
-                this._childrenHidden = true;
-            }
         }
 
         DigitalRain._registry.set(this._el, this);
@@ -713,6 +701,18 @@ class DigitalRain {
                 // Wire resize to all layers
                 this._onResize = () => this._layers.forEach(l => l._handleResize());
                 window.addEventListener('resize', this._onResize, { passive: true });
+                // hideChildren — black out container and hide pre-existing children
+                if (this._cfg.hideChildren) {
+                    this._el.style.backgroundColor = this._cfg.bgColor;
+                    const toHide = this._preExisting && this._preExisting.length
+                        ? this._preExisting
+                        : Array.from(this._el.children).filter(c => !c.dataset.drainWrapper);
+                    for (const child of toHide) {
+                        child.dataset._drainVis = child.style.visibility || '';
+                        child.style.visibility = 'hidden';
+                    }
+                    this._childrenHidden = true;
+                }
                 this._emit('start');
             };
             if (ms > 0) this._startTimer = setTimeout(doStart, ms);
@@ -744,14 +744,13 @@ class DigitalRain {
                 if (this._childrenHidden) {
                     this._el.style.backgroundColor = '';
                     for (const child of this._el.children) {
+                        if (child.dataset.drainWrapper) continue;
                         if (child.dataset._drainVis !== undefined) {
                             child.style.visibility = child.dataset._drainVis || '';
                             delete child.dataset._drainVis;
                         }
                     }
                     this._childrenHidden = false;
-                } else if (this._layers) {
-                    this._el.style.backgroundColor = '';
                 }
                 this._paused = false;
                 this._emit('stop');
@@ -799,11 +798,11 @@ class DigitalRain {
 
     /** Alias for stop(). Also removes from registry. */
     destroy() {
+        this.stop();
         if (this._layers) {
             this._layers.forEach(l => { l.destroy(); l._el.remove(); });
             this._layers = null;
         }
-        this.stop();
         DigitalRain._registry.delete(this._el);
     }
 
@@ -901,7 +900,7 @@ class DigitalRain {
         if (this._layers) {
             Object.assign(this._cfg, o);
             // Update container-level side effects
-            if (o.bgColor !== undefined) this._el.style.backgroundColor = o.bgColor;
+            // bgColor is handled per-layer via each layer's own canvas rendering
             if (o.tapToBurst !== undefined) {
                 if (o.tapToBurst && !this._boundTap) {
                     this._boundTap = (e) => {
@@ -926,7 +925,7 @@ class DigitalRain {
             // direction always synced from parent
             if (o.direction !== undefined) layerUpdate.direction = o.direction;
             // strip container-level keys that layers don't manage
-            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers','transparent'].forEach(k => delete layerUpdate[k]);
+            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers'].forEach(k => delete layerUpdate[k]);
             this._layers.forEach(l => l.configure(layerUpdate));
             return;
         }
@@ -1102,7 +1101,6 @@ class DigitalRain {
             fadeOutDuration: 0,
             on:             {},
             layers:         null,
-            transparent:    false,
         };
     }
 
@@ -1142,7 +1140,6 @@ class DigitalRain {
             introSpeed:       { type: 'number',  default: 98,        description: 'Pioneer drop speed (0–100)' },
             on:               { type: 'object',  default: '{}',      description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd }' },
             layers:           { type: 'array',   default: 'null',    description: 'Array of 1–3 layer config objects for parallax depth effect. null = single layer.' },
-            transparent:      { type: 'boolean', default: false,     description: 'Use transparent canvas background. Enables layer compositing. Set automatically in layers mode.' },
         };
     }
 
@@ -1312,7 +1309,8 @@ class DigitalRain {
         Object.assign(this._canvas.style, {
             position: 'absolute', top: '0', left: '0',
             width: '100%', height: '100%',
-            pointerEvents: 'none', zIndex: '9999',
+            pointerEvents: 'none',
+            zIndex: '9999',
             opacity: cfg.opacity != null ? cfg.opacity : 1,
         });
 

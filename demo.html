@@ -667,7 +667,15 @@
     function toggleHideChildren() {
         const on = !rain.getConfig().hideChildren;
         rain.configure({ hideChildren: on });
-        rain.stop();
+        if (rain._layers) {
+            rain.destroy();
+            rain = new DigitalRain('#rain', Object.assign({}, buildBaseConfig(), {
+                hideChildren: on,
+                layers: currentLayerConfigs(),
+            }));
+        } else {
+            rain.stop();
+        }
         rain.start();
         document.getElementById('hideChildrenToggle').classList.toggle('active', !on);
     }
@@ -794,6 +802,7 @@
             trailLengthFast: +document.getElementById('rTF').value,
             trailLengthSlow: +document.getElementById('rTS').value,
             tapToBurst:      document.getElementById('tapToggle').classList.contains('active'),
+            hideChildren:    !document.getElementById('hideChildrenToggle').classList.contains('active'),
             direction:       document.getElementById('dirUp').classList.contains('active') ? 'up' : 'down',
             theme:           'green',
             on: {
