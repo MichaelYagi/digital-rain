@@ -607,6 +607,9 @@ class DigitalRain {
         this._statsIdCounter = 0;
         this._onResize       = this._handleResize.bind(this);
         this._preExisting    = null;
+        this._throttleTimer  = null;   // smartThrottle interval handle
+        this._throttleCfg    = null;   // original values before throttling
+        this._throttleAbove  = 0;      // consecutive checks above target+15
 
         // ── Layers ────────────────────────────────────────────────────────
         // If layers option is an array, create child instances — one per layer.
@@ -714,6 +717,7 @@ class DigitalRain {
                     this._childrenHidden = true;
                 }
                 this._emit('start');
+                this._startThrottle();
             };
             if (ms > 0) this._startTimer = setTimeout(doStart, ms);
             else        doStart();
@@ -753,6 +757,7 @@ class DigitalRain {
                     this._childrenHidden = false;
                 }
                 this._paused = false;
+                this._stopThrottle();
                 this._emit('stop');
             };
             if (fadeSecs > 0) {
@@ -925,13 +930,31 @@ class DigitalRain {
             // direction always synced from parent
             if (o.direction !== undefined) layerUpdate.direction = o.direction;
             // strip container-level keys that layers don't manage
-            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers'].forEach(k => delete layerUpdate[k]);
+            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers','smartThrottle','throttleTarget'].forEach(k => delete layerUpdate[k]);
             this._layers.forEach(l => l.configure(layerUpdate));
             return;
         }
         Object.assign(this._cfg, o);
         if (o.opacity !== undefined && this._canvas) {
             this._canvas.style.opacity = this._cfg.opacity;
+        }
+        // Handle smartThrottle live toggle
+        if (o.smartThrottle !== undefined || o.throttleTarget !== undefined) {
+            if (this._cfg.smartThrottle && this._running) {
+                this._startThrottle(); // restarts with new target if already running
+            } else {
+                this._stopThrottle();
+                // Restore original values if throttle was active
+                if (this._throttleCfg) {
+                    Object.assign(this._cfg, this._throttleCfg);
+                    if (this._worker) {
+                        const resolved = this._resolveTheme(this._cfg);
+                        this._post('configure', Object.assign({}, this._throttleCfg, {
+                            greenLUT: resolved.greenLUT, themeColors: resolved.themeColors,
+                        }));
+                    }
+                }
+            }
         }
         if (this._worker) {
             const resolved = this._resolveTheme(this._cfg);
@@ -953,7 +976,7 @@ class DigitalRain {
 
     /**
      * Register an event callback.
-     * @param {string}   event - 'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'
+     * @param {string}   event - 'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'|'throttle'
      * @param {Function} fn
      * @returns {DigitalRain} this
      */
@@ -1101,6 +1124,8 @@ class DigitalRain {
             fadeOutDuration: 0,
             on:             {},
             layers:         null,
+            smartThrottle:  true,
+            throttleTarget: 55,
         };
     }
 
@@ -1138,8 +1163,10 @@ class DigitalRain {
             fadeOutDuration:  { type: 'number',  default: 0,         description: 'Seconds to fade canvas before unmounting on stop' },
             introDepth:       { type: 'number',  default: 50,        description: 'Pioneer drop depth: 0=off, 50=halfway, 100=full' },
             introSpeed:       { type: 'number',  default: 98,        description: 'Pioneer drop speed (0–100)' },
-            on:               { type: 'object',  default: '{}',      description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd }' },
+            on:               { type: 'object',  default: '{}',      description: 'Event callbacks: { start, stop, pause, resume, introComplete, burstStart, burstEnd, throttle }' },
             layers:           { type: 'array',   default: 'null',    description: 'Array of 1–3 layer config objects for parallax depth effect. null = single layer.' },
+            smartThrottle:    { type: 'boolean', default: true,      description: 'Automatically reduce density/trailLengthSlow/dualFrequency when fps drops below throttleTarget.' },
+            throttleTarget:   { type: 'number',  default: 55,        description: 'fps floor for smartThrottle. Throttle eases back when fps stays above throttleTarget+15.' },
         };
     }
 
@@ -1177,7 +1204,7 @@ class DigitalRain {
             ['configure(opts)',       'Update options live.'],
             ['randomize(overrides?)', 'Randomize visuals and restart. Returns applied config.'],
             ['triggerBurst(col?)',    'Fire a burst manually.'],
-            ['on(event, fn)',         "'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'"],
+            ['on(event, fn)',         "'start'|'stop'|'pause'|'resume'|'introComplete'|'burstStart'|'burstEnd'|'throttle'"],
         ];
         const mW = Math.max(...methods.map(([m]) => m.length));
         for (const [sig, desc] of methods) {
@@ -1367,6 +1394,7 @@ class DigitalRain {
             this._childrenHidden = false;
         }
         this._paused = false;
+        this._stopThrottle();
         this._emit('stop');
     }
 
@@ -1391,10 +1419,74 @@ class DigitalRain {
         this._post('triggerBurst', { col, epicenterRow: Math.max(0, row) });
     }
 
+    _startThrottle() {
+        if (!this._cfg.smartThrottle) return;
+        // In layers mode each child manages its own throttle — parent doesn't throttle
+        if (this._layers) return;
+        this._stopThrottle();
+        // Snapshot the original user values — never exceed these when recovering
+        this._throttleCfg = {
+            density:        this._cfg.density,
+            trailLengthSlow: this._cfg.trailLengthSlow,
+            dualFrequency:  this._cfg.dualFrequency,
+        };
+        this._throttleAbove = 0;
+        const target  = this._cfg.throttleTarget || 55;
+        const headroom = target + 15;
+        this._throttleTimer = setInterval(async () => {
+            if (!this._running || this._paused || !this._worker) return;
+            let fps;
+            try { ({ fps } = await this.getStats()); } catch(e) { return; }
+            const cur = this._throttleCfg;
+            if (fps < target) {
+                this._throttleAbove = 0;
+                const next = {
+                    density:         Math.max(20, this._cfg.density        - 5),
+                    trailLengthSlow: Math.max(5,  this._cfg.trailLengthSlow - 5),
+                    dualFrequency:   Math.max(0,  this._cfg.dualFrequency   - 10),
+                };
+                if (next.density         !== this._cfg.density        ||
+                    next.trailLengthSlow !== this._cfg.trailLengthSlow ||
+                    next.dualFrequency   !== this._cfg.dualFrequency) {
+                    this._emit('throttle', { fps, action: 'reduce', config: next });
+                    this.configure(next);
+                }
+            } else if (fps > headroom) {
+                this._throttleAbove++;
+                if (this._throttleAbove >= 3) {
+                    this._throttleAbove = 0;
+                    const next = {
+                        density:         Math.min(cur.density,        this._cfg.density        + 5),
+                        trailLengthSlow: Math.min(cur.trailLengthSlow,this._cfg.trailLengthSlow + 5),
+                        dualFrequency:   Math.min(cur.dualFrequency,  this._cfg.dualFrequency   + 10),
+                    };
+                    if (next.density         !== this._cfg.density        ||
+                        next.trailLengthSlow !== this._cfg.trailLengthSlow ||
+                        next.dualFrequency   !== this._cfg.dualFrequency) {
+                        this._emit('throttle', { fps, action: 'recover', config: next });
+                        this.configure(next);
+                    }
+                }
+            } else {
+                this._throttleAbove = 0;
+            }
+        }, 2000);
+    }
+
+    _stopThrottle() {
+        if (this._throttleTimer) {
+            clearInterval(this._throttleTimer);
+            this._throttleTimer = null;
+        }
+        this._throttleCfg  = null;
+        this._throttleAbove = 0;
+    }
+
     _onWorkerMessage(e) {
         const { type, payload } = e.data;
         if (type === 'event') {
             this._emit(payload.name, payload.data);
+            if (payload.name === 'start') this._startThrottle();
         } else if (type === 'stats') {
             const cb = this._statsCallbacks.get(payload.id);
             if (cb) { this._statsCallbacks.delete(payload.id); cb(payload); }

@@ -101,6 +101,10 @@ new DigitalRain('#container', {
     // ── Parallax depth layers ─────────────────────────────────────────────
     layers:           null,   // array of per-layer config objects. null = single layer.
 
+    // ── Smart throttle ────────────────────────────────────────────────────
+    smartThrottle:    true,   // automatically reduce quality when fps drops
+    throttleTarget:   55,     // fps floor — throttle eases back above throttleTarget+15
+
     // ── Events ────────────────────────────────────────────────────────────
     on: {
         start:         () => {},
@@ -110,6 +114,7 @@ new DigitalRain('#container', {
         introComplete: () => {},
         burstStart:    ({ epicenter }) => {},
         burstEnd:      () => {},
+        throttle:      ({ fps, action, config }) => {}, // 'reduce' or 'recover'
     },
 
 })
@@ -316,6 +321,11 @@ rain.on('resume',        () => {});
 rain.on('introComplete', () => {});
 rain.on('burstStart',    ({ epicenter }) => console.log('col', epicenter));
 rain.on('burstEnd',      () => {});
+rain.on('throttle',      ({ fps, action, config }) => {
+    // action: 'reduce' — quality was lowered to maintain fps
+    // action: 'recover' — quality was restored after sustained headroom
+    console.log(action, fps, config);
+});
 ```
 
 ---
@@ -409,7 +419,31 @@ const { fps } = await rain.getStats();
 console.log(fps); // e.g. 75
 ```
 
-**Target:** 60 fps on the display's native refresh rate. Below 60 consistently means the render budget is being exceeded.
+**Smart throttle:**
+
+`smartThrottle: true` (default) automatically reduces `density`, `trailLengthSlow`, and `dualFrequency` when fps drops below `throttleTarget`, and eases them back up when there's sustained headroom. In layers mode each layer manages its own throttle independently.
+
+```js
+// Default — on, targeting 55fps floor
+new DigitalRain('#container').start();
+
+// Custom target
+new DigitalRain('#container', { throttleTarget: 45 }).start();
+
+// Disable — full user control, no automatic adjustments
+new DigitalRain('#container', { smartThrottle: false }).start();
+
+// Toggle live
+rain.configure({ smartThrottle: false }); // disable and restore original values
+rain.configure({ smartThrottle: true  }); // re-enable
+
+// Observe throttle decisions
+rain.on('throttle', ({ fps, action, config }) => {
+    console.log(action, 'at', fps, 'fps →', config);
+});
+```
+
+The demo fps counter turns amber when the throttle is actively reducing quality, and returns to green when it recovers.
 
 **What drives cost:**
 

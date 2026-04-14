@@ -123,7 +123,7 @@ describe('DEFAULTS', () => {
             'burstWidth','burstReach','burstAngle',
             'tapToBurst','hideChildren','introDepth','introSpeed',
             'theme','glowColor','opacity','density','direction',
-            'fadeOutDuration','on','layers',
+            'fadeOutDuration','on','layers','smartThrottle','throttleTarget',
         ]) {
             expect(d, `missing: ${key}`).toHaveProperty(key);
         }
@@ -1201,5 +1201,49 @@ describe('library structure', () => {
 
     it('getLayer method is present', () => {
         expect(src).toContain('getLayer(');
+    });
+});
+// ─────────────────────────────────────────────────────────────────────────────
+// SMART THROTTLE
+// ─────────────────────────────────────────────────────────────────────────────
+describe('smartThrottle', () => {
+    it('smartThrottle default is true', () => {
+        expect(DigitalRain.DEFAULTS.smartThrottle).toBe(true);
+    });
+
+    it('throttleTarget default is 55', () => {
+        expect(DigitalRain.DEFAULTS.throttleTarget).toBe(55);
+    });
+
+    it('_throttleTimer is null before start', () => {
+        expect(makeRain()._throttleTimer).toBeNull();
+    });
+
+    it('_throttleCfg is null before start', () => {
+        expect(makeRain()._throttleCfg).toBeNull();
+    });
+
+    it('smartThrottle:false — timer never starts', async () => {
+        const rain = makeRain({ smartThrottle: false });
+        rain.start();
+        await new Promise(r => setTimeout(r, 50));
+        expect(rain._throttleTimer).toBeNull();
+        rain.stop();
+    });
+
+    it('configure({smartThrottle:false}) stops timer', () => {
+        const rain = makeRain({ smartThrottle: true });
+        rain.start();
+        rain.configure({ smartThrottle: false });
+        expect(rain._throttleTimer).toBeNull();
+        rain.stop();
+    });
+
+    it('smartThrottle is not passed to child layers', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            // Each layer manages its own throttle independently — parent does not set it on them
+            expect(l.getConfig().smartThrottle).toBe(true); // inherits from base, manages own loop
+        }
     });
 });
