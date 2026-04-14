@@ -1,4 +1,4 @@
-# digital-rain
+# digital-rain [![Sync to GitHub Pages](https://github.com/MichaelYagi/digital-rain/actions/workflows/sync-to-pages.yml/badge.svg)](https://github.com/MichaelYagi/digital-rain/actions/workflows/sync-to-pages.yml)
 
 Demo [here](https://michaelyagi.github.io/digital-rain/demo.html).
 
