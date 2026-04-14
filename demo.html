@@ -36,6 +36,20 @@
             pointer-events: none;
         }
 
+        /* ── FPS overlay ───────────────────────────────── */
+        #fpsOverlay {
+            position: fixed;
+            bottom: 0.5rem;
+            right: 0.6rem;
+            z-index: 10001;
+            font-size: 0.58rem;
+            font-family: "Courier New", monospace;
+            color: rgba(0,255,65,0.4);
+            text-align: right;
+            pointer-events: none;
+            line-height: 1.5;
+        }
+
         /* ── Event log ──────────────────────────────────── */
         #eventLog {
             position: fixed;
@@ -238,6 +252,7 @@
     </div>
 </div>
 
+<div id="fpsOverlay"></div>
 <div id="panel">
 
     <!-- ── Drawer (slides up) ── -->
@@ -588,6 +603,20 @@
     });
 
     rain.start();
+
+    // ── FPS overlay ────────────────────────────────────────────────────────
+    const fpsOverlay = document.getElementById('fpsOverlay');
+    (async function pollStats() {
+        while (true) {
+            await new Promise(r => setTimeout(r, 500));
+            if (!rain.isRunning() || rain.isPaused()) { fpsOverlay.textContent = ''; continue; }
+            try {
+                const s = await rain.getStats();
+                const ft = s.fps > 0 ? (1000 / s.fps).toFixed(1) : '—';
+                fpsOverlay.textContent = `${s.fps} fps · ${ft}ms`;
+            } catch(e) { fpsOverlay.textContent = ''; }
+        }
+    })();
 
     // ── Drawer / tabs ──────────────────────────────────────────────────────
     let drawerOpen = false;
