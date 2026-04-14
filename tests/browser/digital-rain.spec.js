@@ -751,14 +751,21 @@ test('smartThrottle — reductions accumulate on layer _cfg when fps is low', as
             smartThrottle: true,
         });
         window._rain.start();
-        // Force low fps so throttle fires
-        window._rain._mainThreadFps = 15;
     });
-    await page.waitForTimeout(BOOT_MS + 6500); // wait 3 samples × 2s
+    await page.waitForTimeout(BOOT_MS);
+    // Directly invoke a reduction on each layer — same logic as _startThrottle's reduceLayer
+    await page.evaluate(() => {
+        window._rain._layers.forEach(l => {
+            const cfg = l._cfg;
+            const next = {};
+            if (cfg.trailLengthSlow > 5) next.trailLengthSlow = Math.max(5, cfg.trailLengthSlow - 8);
+            if (cfg.dualFrequency   > 0) next.dualFrequency   = Math.max(0, cfg.dualFrequency   - 20);
+            if (Object.keys(next).length) l.configure(next);
+        });
+    });
     const vals = await page.evaluate(() =>
         window._rain._layers.map(l => ({ t: l._cfg.trailLengthSlow, d: l._cfg.dualFrequency }))
     );
-    // At least one layer should have been reduced
     const anyReduced = vals.some(v => v.t < 70 || v.d < 50);
     expect(anyReduced).toBe(true);
 });

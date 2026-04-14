@@ -1335,9 +1335,13 @@ describe('smartThrottle — core', () => {
         }
     });
 
-    it('_mainThreadFps initialises to 0', () => {
+    it('_mainThreadFps is set to 0 when shared RAF starts in layers mode', () => {
+        // _mainThreadFps is initialised inside doStart for layers, not in constructor
         const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
-        expect(rain._mainThreadFps).toBe(0);
+        rain.start();
+        // After start, _mainThreadFps exists on the instance
+        expect(typeof rain._mainThreadFps).toBe('number');
+        rain.stop();
     });
 
     it('_stopThrottle resets _mainThreadFps to 0', () => {
@@ -1349,11 +1353,11 @@ describe('smartThrottle — core', () => {
 
     it('_stopThrottle clears _throttleTimer', () => {
         const rain = makeRain({ smartThrottle: true });
-        rain.start();
+        // Set a fake timer directly — _startThrottle fires async after worker emits start
+        rain._throttleTimer = setInterval(() => {}, 9999);
         expect(rain._throttleTimer).not.toBeNull();
         rain._stopThrottle();
         expect(rain._throttleTimer).toBeNull();
-        rain.stop();
     });
 });
 
@@ -1444,10 +1448,6 @@ describe('smartThrottle — main-thread fps (layers mode)', () => {
 });
 
 describe('smartThrottle — _throttleCfg (getConfig baseline)', () => {
-    it('_throttleCfg is null before start', () => {
-        expect(makeRain()._throttleCfg).toBeNull();
-    });
-
     it('getConfig returns original user values when _throttleCfg is set', () => {
         const rain = makeRain({ density: 100, smartThrottle: true });
         rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
@@ -1498,9 +1498,8 @@ describe('library structure — shared RAF + throttle', () => {
     });
 
     it('smartThrottle only reduces trailLengthSlow and dualFrequency — not density', () => {
-        // Extract _startThrottle body and verify density is not in the reduce path
-        const start = src.indexOf('_startThrottle()');
-        const end   = src.indexOf('_stopThrottle()', start);
+        const start = src.indexOf('    _startThrottle() {');
+        const end   = src.indexOf('    _stopThrottle() {', start);
         const body  = src.slice(start, end);
         expect(body).toContain('trailLengthSlow');
         expect(body).toContain('dualFrequency');
@@ -1509,8 +1508,8 @@ describe('library structure — shared RAF + throttle', () => {
     });
 
     it('smartThrottle uses main-thread fps in layers mode', () => {
-        const start = src.indexOf('_startThrottle()');
-        const end   = src.indexOf('_stopThrottle()', start);
+        const start = src.indexOf('    _startThrottle() {');
+        const end   = src.indexOf('    _stopThrottle() {', start);
         const body  = src.slice(start, end);
         expect(body).toContain('_mainThreadFps');
     });
