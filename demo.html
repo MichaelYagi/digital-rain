@@ -646,9 +646,14 @@
             try {
                 const s = await rain.getStats();
                 const fps = Number.isFinite(s.fps) ? s.fps : '—';
-                if (_throttling) {
-                    const live = rain.getLiveConfig();
-                    fpsStatus.innerHTML = `${fps} fps<br><span style="font-size:0.5rem;opacity:0.8">d:${live.density} t:${live.trailLengthSlow} f:${live.dualFrequency}</span>`;
+                if (_throttling && rain._layers) {
+                    const cfgs = rain._layers.map(l => l._cfg);
+                    const t = cfgs.map(c => c.trailLengthSlow).join('/');
+                    const d = cfgs.map(c => c.dualFrequency).join('/');
+                    fpsStatus.innerHTML = `${fps} fps<br><span style="font-size:0.5rem;opacity:0.8">trail:${t} dual:${d}</span>`;
+                } else if (_throttling) {
+                    const cfg = rain._cfg;
+                    fpsStatus.innerHTML = `${fps} fps<br><span style="font-size:0.5rem;opacity:0.8">trail:${cfg.trailLengthSlow} dual:${cfg.dualFrequency}</span>`;
                 } else {
                     fpsStatus.textContent = `${fps} fps`;
                 }

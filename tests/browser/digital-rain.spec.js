@@ -695,3 +695,84 @@ test('layers shared RAF — _sharedRafId is null after stop', async ({ page }) =
     const hasRaf = await page.evaluate(() => window._rain._sharedRafId !== null);
     expect(hasRaf).toBe(false);
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// SMART THROTTLE
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('smartThrottle — _mainThreadFps is updated after start in layers mode', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+            smartThrottle: true,
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS + 1500);
+    const fps = await page.evaluate(() => window._rain._mainThreadFps);
+    expect(fps).toBeGreaterThan(0);
+});
+
+test('smartThrottle — throttleTimer is set after start in layers mode', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+            smartThrottle: true,
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const hasTimer = await page.evaluate(() => window._rain._throttleTimer !== null);
+    expect(hasTimer).toBe(true);
+});
+
+test('smartThrottle — throttleTimer is cleared after stop', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+            smartThrottle: true,
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.stop());
+    const hasTimer = await page.evaluate(() => window._rain._throttleTimer !== null);
+    expect(hasTimer).toBe(false);
+});
+
+test('smartThrottle — reductions accumulate on layer _cfg when fps is low', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0, trailLengthSlow: 70, dualFrequency: 50 },
+                { fontSize: 14, introDepth: 0, trailLengthSlow: 70, dualFrequency: 50 }],
+            smartThrottle: true,
+        });
+        window._rain.start();
+        // Force low fps so throttle fires
+        window._rain._mainThreadFps = 15;
+    });
+    await page.waitForTimeout(BOOT_MS + 6500); // wait 3 samples × 2s
+    const vals = await page.evaluate(() =>
+        window._rain._layers.map(l => ({ t: l._cfg.trailLengthSlow, d: l._cfg.dualFrequency }))
+    );
+    // At least one layer should have been reduced
+    const anyReduced = vals.some(v => v.t < 70 || v.d < 50);
+    expect(anyReduced).toBe(true);
+});
+
+test('smartThrottle:false — no throttle timer', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+            smartThrottle: false,
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    const hasTimer = await page.evaluate(() => window._rain._throttleTimer !== null);
+    expect(hasTimer).toBe(false);
+});

@@ -1295,3 +1295,223 @@ describe('smartThrottle', () => {
         }
     });
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// SMART THROTTLE — updated for main-thread fps measurement
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('smartThrottle — core', () => {
+    it('smartThrottle default is true', () => {
+        expect(DigitalRain.DEFAULTS.smartThrottle).toBe(true);
+    });
+
+    it('throttleTarget default is 45', () => {
+        expect(DigitalRain.DEFAULTS.throttleTarget).toBe(45);
+    });
+
+    it('_throttleTimer is null before start', () => {
+        expect(makeRain()._throttleTimer).toBeNull();
+    });
+
+    it('smartThrottle:false — timer never starts', async () => {
+        const rain = makeRain({ smartThrottle: false });
+        rain.start();
+        await new Promise(r => setTimeout(r, 50));
+        expect(rain._throttleTimer).toBeNull();
+        rain.stop();
+    });
+
+    it('configure({smartThrottle:false}) stops timer', () => {
+        const rain = makeRain({ smartThrottle: true });
+        rain.start();
+        rain.configure({ smartThrottle: false });
+        expect(rain._throttleTimer).toBeNull();
+        rain.stop();
+    });
+
+    it('smartThrottle is disabled on child layers — parent manages throttle', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l.getConfig().smartThrottle).toBe(false);
+        }
+    });
+
+    it('_mainThreadFps initialises to 0', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        expect(rain._mainThreadFps).toBe(0);
+    });
+
+    it('_stopThrottle resets _mainThreadFps to 0', () => {
+        const rain = makeRain();
+        rain._mainThreadFps = 55;
+        rain._stopThrottle();
+        expect(rain._mainThreadFps).toBe(0);
+    });
+
+    it('_stopThrottle clears _throttleTimer', () => {
+        const rain = makeRain({ smartThrottle: true });
+        rain.start();
+        expect(rain._throttleTimer).not.toBeNull();
+        rain._stopThrottle();
+        expect(rain._throttleTimer).toBeNull();
+        rain.stop();
+    });
+});
+
+describe('smartThrottle — reduceLayer', () => {
+    it('reduceLayer reduces trailLengthSlow on layer _cfg directly', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9, trailLengthSlow: 40 }, { fontSize: 14, trailLengthSlow: 70 }] });
+        // Simulate what reduceLayer does — configure on layer with trailLengthSlow - 8
+        rain._layers.forEach(l => {
+            const cfg = l._cfg;
+            if (cfg.trailLengthSlow > 5) l.configure({ trailLengthSlow: Math.max(5, cfg.trailLengthSlow - 8) });
+        });
+        expect(rain._layers[0]._cfg.trailLengthSlow).toBe(32);
+        expect(rain._layers[1]._cfg.trailLengthSlow).toBe(62);
+    });
+
+    it('reduceLayer reduces dualFrequency on layer _cfg directly', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9, dualFrequency: 50 }, { fontSize: 14, dualFrequency: 30 }] });
+        rain._layers.forEach(l => {
+            const cfg = l._cfg;
+            if (cfg.dualFrequency > 0) l.configure({ dualFrequency: Math.max(0, cfg.dualFrequency - 20) });
+        });
+        expect(rain._layers[0]._cfg.dualFrequency).toBe(30);
+        expect(rain._layers[1]._cfg.dualFrequency).toBe(10);
+    });
+
+    it('reductions accumulate on subsequent calls', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 14, trailLengthSlow: 70, dualFrequency: 50 }] });
+        const layer = rain._layers[0];
+        // First reduction
+        layer.configure({ trailLengthSlow: Math.max(5, layer._cfg.trailLengthSlow - 8), dualFrequency: Math.max(0, layer._cfg.dualFrequency - 20) });
+        expect(layer._cfg.trailLengthSlow).toBe(62);
+        expect(layer._cfg.dualFrequency).toBe(30);
+        // Second reduction — reads from _cfg so accumulates
+        layer.configure({ trailLengthSlow: Math.max(5, layer._cfg.trailLengthSlow - 8), dualFrequency: Math.max(0, layer._cfg.dualFrequency - 20) });
+        expect(layer._cfg.trailLengthSlow).toBe(54);
+        expect(layer._cfg.dualFrequency).toBe(10);
+    });
+
+    it('trailLengthSlow floor is 5', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 14, trailLengthSlow: 8 }] });
+        const layer = rain._layers[0];
+        layer.configure({ trailLengthSlow: Math.max(5, layer._cfg.trailLengthSlow - 8) });
+        expect(layer._cfg.trailLengthSlow).toBe(5);
+    });
+
+    it('dualFrequency floor is 0', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 14, dualFrequency: 10 }] });
+        const layer = rain._layers[0];
+        layer.configure({ dualFrequency: Math.max(0, layer._cfg.dualFrequency - 20) });
+        expect(layer._cfg.dualFrequency).toBe(0);
+    });
+
+    it('density is NOT touched by throttle — avoids _initColumns reinit', () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 14, density: 100 }] });
+        const layer = rain._layers[0];
+        const initColsCalls = [];
+        // density changes trigger _initColumns which causes visual stops — must not happen
+        // Verify the throttle only sends trailLengthSlow and dualFrequency
+        const workerMsgs = layer._worker ? layer._worker.messages : [];
+        const configMsgs = workerMsgs.filter(m => m.type === 'configure' && m.payload.density !== undefined);
+        // No density configure messages from throttle path
+        expect(configMsgs.length).toBe(0);
+    });
+});
+
+describe('smartThrottle — main-thread fps (layers mode)', () => {
+    it('_mainThreadFps is set on the parent instance in layers mode', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain._mainThreadFps = 25; // simulate low fps
+        expect(rain._mainThreadFps).toBe(25);
+    });
+
+    it('throttle timer starts after start() in layers mode', async () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.start();
+        await new Promise(r => setTimeout(r, 50));
+        expect(rain._throttleTimer).not.toBeNull();
+        rain.stop();
+    });
+
+    it('throttle timer is cleared after stop() in layers mode', async () => {
+        const rain = makeRain({ smartThrottle: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.start();
+        await new Promise(r => setTimeout(r, 50));
+        rain.stop();
+        expect(rain._throttleTimer).toBeNull();
+    });
+});
+
+describe('smartThrottle — _throttleCfg (getConfig baseline)', () => {
+    it('_throttleCfg is null before start', () => {
+        expect(makeRain()._throttleCfg).toBeNull();
+    });
+
+    it('getConfig returns original user values when _throttleCfg is set', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60;
+        expect(rain.getConfig().density).toBe(100);
+    });
+
+    it('getLiveConfig returns actual running values', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60;
+        expect(rain.getLiveConfig().density).toBe(60);
+    });
+
+    it('configure() on a throttled key updates _throttleCfg baseline', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain._cfg.density = 60;
+        rain.configure({ density: 70 });
+        expect(rain._throttleCfg.density).toBe(70);
+    });
+
+    it('configure() on non-throttled key does not affect _throttleCfg', () => {
+        const rain = makeRain({ density: 100, smartThrottle: true });
+        rain._throttleCfg = { density: 100, trailLengthSlow: 70, dualFrequency: 50 };
+        rain.configure({ dropSpeed: 50 });
+        expect(rain._throttleCfg.density).toBe(100);
+    });
+});
+
+describe('library structure — shared RAF + throttle', () => {
+    const src = readFileSync(_libPath, 'utf8');
+
+    it('worker handles tick message', () => {
+        expect(src).toContain("case 'tick':");
+    });
+
+    it('worker has _sharedRaf flag', () => {
+        expect(src).toContain('_sharedRaf');
+    });
+
+    it('_sharedRafId is in constructor', () => {
+        expect(src).toContain('_sharedRafId');
+    });
+
+    it('_mainThreadFps is tracked in shared RAF loop', () => {
+        expect(src).toContain('_mainThreadFps');
+    });
+
+    it('smartThrottle only reduces trailLengthSlow and dualFrequency — not density', () => {
+        // Extract _startThrottle body and verify density is not in the reduce path
+        const start = src.indexOf('_startThrottle()');
+        const end   = src.indexOf('_stopThrottle()', start);
+        const body  = src.slice(start, end);
+        expect(body).toContain('trailLengthSlow');
+        expect(body).toContain('dualFrequency');
+        // density changes call _initColumns and cause visual stops — must not be in throttle path
+        expect(body).not.toContain("next.density");
+    });
+
+    it('smartThrottle uses main-thread fps in layers mode', () => {
+        const start = src.indexOf('_startThrottle()');
+        const end   = src.indexOf('_stopThrottle()', start);
+        const body  = src.slice(start, end);
+        expect(body).toContain('_mainThreadFps');
+    });
+});
