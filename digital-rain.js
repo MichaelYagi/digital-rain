@@ -622,20 +622,13 @@ class DigitalRain {
         //   on             — events fire from parent, not per-layer
         this._layers = null;
         if (Array.isArray(this._cfg.layers) && this._cfg.layers.length > 0) {
-            // Handle hideChildren at the container level
-            if (this._cfg.hideChildren) {
-                this._el.style.backgroundColor = this._cfg.bgColor;
-                for (const child of this._el.children) {
-                    child.dataset._drainVis = child.style.visibility || '';
-                    child.style.visibility = 'hidden';
-                }
-                this._childrenHidden = true;
-            }
-
             // Ensure container is positioned
             if (window.getComputedStyle(this._el).position === 'static') {
                 this._el.style.position = 'relative';
             }
+
+            // Snapshot pre-existing children BEFORE appending wrappers
+            const preExisting = Array.from(this._el.children);
 
             // Build base config — strip container-level options
             const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration','transparent'];
@@ -663,6 +656,15 @@ class DigitalRain {
 
             // Container background provides the base colour — all layer canvases are transparent
             this._el.style.backgroundColor = this._cfg.bgColor;
+
+            // Handle hideChildren AFTER wrappers are appended — only hide pre-existing children
+            if (this._cfg.hideChildren) {
+                for (const child of preExisting) {
+                    child.dataset._drainVis = child.style.visibility || '';
+                    child.style.visibility = 'hidden';
+                }
+                this._childrenHidden = true;
+            }
         }
 
         DigitalRain._registry.set(this._el, this);
@@ -807,7 +809,13 @@ class DigitalRain {
 
     /** Freeze in place. No-op if not running or already paused. */
     pause() {
-        if (this._layers) { this._layers.forEach(l => l.pause()); this._paused = true; return; }
+        if (this._layers) {
+            if (!this._running || this._paused) return;
+            this._paused = true;
+            this._layers.forEach(l => l.pause());
+            this._emit('pause');
+            return;
+        }
         if (!this._running || this._paused) return;
         this._paused = true;
         this._post('pause');
@@ -816,7 +824,14 @@ class DigitalRain {
 
     /** Unfreeze. Falls back to start() if not running. */
     resume() {
-        if (this._layers) { this._layers.forEach(l => l.resume()); this._paused = false; return; }
+        if (this._layers) {
+            if (!this._running) { this.start(); return; }
+            if (!this._paused) return;
+            this._paused = false;
+            this._layers.forEach(l => l.resume());
+            this._emit('resume');
+            return;
+        }
         if (!this._running) { this.start(); return; }
         if (!this._paused) return;
         this._paused = false;
@@ -850,6 +865,13 @@ class DigitalRain {
      * @returns {Promise<{frame, fps, columns, activeColumns, dormantColumns, streams, burstActive, burstEpicenter, paused, booting}>}
      */
     getStats() {
+        if (this._layers) {
+            // Delegate to the middle layer for representative stats
+            const mid = this._layers[Math.floor(this._layers.length / 2)];
+            return mid ? mid.getStats() : Promise.resolve({ frame:0, fps:0, columns:0,
+                activeColumns:0, dormantColumns:0, streams:0, burstActive:false,
+                burstEpicenter:-1, paused:this._paused, booting:true });
+        }
         return new Promise((resolve) => {
             if (!this._worker) {
                 resolve({ frame:0, fps:0, columns:0, activeColumns:0, dormantColumns:0,
@@ -878,6 +900,27 @@ class DigitalRain {
     configure(o) {
         if (this._layers) {
             Object.assign(this._cfg, o);
+            // Update container-level side effects
+            if (o.bgColor !== undefined) this._el.style.backgroundColor = o.bgColor;
+            if (o.tapToBurst !== undefined) {
+                if (o.tapToBurst && !this._boundTap) {
+                    this._boundTap = (e) => {
+                        if (!this._cfg.burst) return;
+                        const rect    = this._el.getBoundingClientRect();
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                        const col = Math.floor((clientX - rect.left) / this._cfg.fontSize);
+                        const row = Math.floor((clientY - rect.top)  / this._cfg.fontSize);
+                        this._layers.forEach(l => l._post('triggerBurst', { col, epicenterRow: Math.max(0, row) }));
+                    };
+                    this._el.addEventListener('click',      this._boundTap);
+                    this._el.addEventListener('touchstart', this._boundTap, { passive: true });
+                } else if (!o.tapToBurst && this._boundTap) {
+                    this._el.removeEventListener('click',      this._boundTap);
+                    this._el.removeEventListener('touchstart', this._boundTap);
+                    this._boundTap = null;
+                }
+            }
             // Build the per-layer update — enforce container-level options
             const layerUpdate = Object.assign({}, o);
             // direction always synced from parent
@@ -916,7 +959,6 @@ class DigitalRain {
      * @returns {DigitalRain} this
      */
     on(event, fn) {
-        if (this._layers) { this._layers.forEach(l => l.on(event, fn)); return this; }
         if (!this._cfg.on) this._cfg.on = {};
         this._cfg.on[event] = fn;
         return this;

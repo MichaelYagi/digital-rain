@@ -397,6 +397,90 @@ it('configure() strips container-level keys before passing to layers', () => {
     }
 });
 
+it('configure({bgColor}) updates container backgroundColor', () => {
+    const el   = makeEl();
+    const rain = new DigitalRain(el, { layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.configure({ bgColor: '#ff0000' });
+    expect(el.style.backgroundColor).toBe('rgb(255, 0, 0)');
+});
+
+it('on() registers on parent — not delegated to child layers', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    let fired = false;
+    rain.on('stop', () => { fired = true; });
+    // Child layers should NOT have the callback
+    for (const l of rain._layers) {
+        expect(l._cfg.on && l._cfg.on.stop).toBeUndefined();
+    }
+    // Parent should have it
+    expect(typeof rain._cfg.on.stop).toBe('function');
+});
+
+it('pause() emits pause event from parent in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    let fired = false;
+    rain.on('pause', () => { fired = true; });
+    rain.pause();
+    expect(fired).toBe(true);
+});
+
+it('resume() emits resume event from parent in layers mode', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    rain.pause();
+    let fired = false;
+    rain.on('resume', () => { fired = true; });
+    rain.resume();
+    expect(fired).toBe(true);
+});
+
+it('randomize() enforces direction across all layers', () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+    // Set a specific direction then randomize — all layers must keep it
+    rain.configure({ direction: 'up' });
+    const { warn } = console;
+    console.warn = () => {};
+    for (let i = 0; i < 10; i++) {
+        rain.randomize();
+        for (const l of rain._layers) {
+            expect(l.getConfig().direction).toBe('up');
+        }
+    }
+    console.warn = warn;
+});
+
+it('getStats() resolves via middle layer when in layers mode', async () => {
+    const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }, { fontSize: 22 }] });
+    const stats = await rain.getStats();
+    expect(stats).toHaveProperty('frame');
+    expect(stats).toHaveProperty('columns');
+});
+
+it('hideChildren only hides pre-existing children, not layer wrappers', () => {
+    const el    = makeEl();
+    const child = document.createElement('p');
+    el.appendChild(child);
+    const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    // Pre-existing child should be hidden
+    expect(child.style.visibility).toBe('hidden');
+    // Wrapper divs should be visible
+    const wrappers = Array.from(el.querySelectorAll(':scope > div'));
+    for (const w of wrappers) {
+        expect(w.style.visibility).not.toBe('hidden');
+    }
+});
+
+it('hideChildren restores pre-existing children on stop in layers mode', () => {
+    const el    = makeEl();
+    const child = document.createElement('p');
+    el.appendChild(child);
+    const rain  = new DigitalRain(el, { hideChildren: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+    rain.start();
+    rain.stop();
+    expect(child.style.visibility).toBe('');
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LIFECYCLE
 // ─────────────────────────────────────────────────────────────────────────────
