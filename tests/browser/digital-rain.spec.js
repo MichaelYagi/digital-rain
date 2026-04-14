@@ -604,3 +604,46 @@ test('layers destroy() removes all wrapper divs', async ({ page }) => {
     );
     expect(divCount).toBe(0);
 });
+test('layers direction enforced — all layers use parent direction', async ({ page }) => {
+    await load(page);
+    const directions = await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            direction: 'up',
+            layers: [
+                { fontSize: 9,  introDepth: 0, direction: 'down' }, // override ignored
+                { fontSize: 14, introDepth: 0 },
+                { fontSize: 22, introDepth: 0 },
+            ],
+        });
+        return window._rain._layers.map(l => l.getConfig().direction);
+    });
+    expect(directions).toEqual(['up', 'up', 'up']);
+});
+
+test('layers configure({direction}) updates all layers', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    await page.waitForTimeout(BOOT_MS);
+    await page.evaluate(() => window._rain.configure({ direction: 'up' }));
+    const directions = await page.evaluate(() => window._rain._layers.map(l => l.getConfig().direction));
+    expect(directions).toEqual(['up', 'up']);
+});
+
+test('layers hideChildren hides child on start, restores on stop', async ({ page }) => {
+    await load(page);
+    await page.evaluate(() => {
+        window._rain = new DigitalRain('#container', {
+            hideChildren: true,
+            layers: [{ fontSize: 9, introDepth: 0 }, { fontSize: 14, introDepth: 0 }],
+        });
+        window._rain.start();
+    });
+    expect(await page.evaluate(() => document.querySelector('#child').style.visibility)).toBe('hidden');
+    await page.evaluate(() => window._rain.stop());
+    expect(await page.evaluate(() => document.querySelector('#child').style.visibility)).toBe('');
+});

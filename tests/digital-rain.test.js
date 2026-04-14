@@ -333,6 +333,53 @@ describe('layers', () => {
     it('single-layer array works without error', () => {
         expect(() => makeRain({ layers: [{ fontSize: 14 }] })).not.toThrow();
     });
+
+    it('direction is enforced from parent — layer direction override is ignored', () => {
+        const rain = makeRain({ direction: 'up', layers: [{ fontSize: 9, direction: 'down' }, { fontSize: 14 }] });
+        // All layers must have the parent direction regardless of per-layer override
+        for (const l of rain._layers) {
+            expect(l.getConfig().direction).toBe('up');
+        }
+    });
+
+    it('configure({direction}) propagates to all layers', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        rain.configure({ direction: 'up' });
+        for (const l of rain._layers) {
+            expect(l.getConfig().direction).toBe('up');
+        }
+    });
+
+    it('startDelay is not passed to individual layers', () => {
+        const rain = makeRain({ startDelay: 5, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l.getConfig().startDelay).toBe(0);
+        }
+    });
+
+    it('fadeOutDuration is not passed to individual layers', () => {
+        const rain = makeRain({ fadeOutDuration: 2, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l.getConfig().fadeOutDuration).toBe(0);
+        }
+    });
+
+    it('tapToBurst is not passed to individual layers', () => {
+        const rain = makeRain({ tapToBurst: true, layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        for (const l of rain._layers) {
+            expect(l.getConfig().tapToBurst).toBe(false);
+        }
+    });
+
+    it('configure() strips container-level keys before passing to layers', () => {
+        const rain = makeRain({ layers: [{ fontSize: 9 }, { fontSize: 14 }] });
+        // fadeOutDuration should not leak into layers via configure
+        rain.configure({ fadeOutDuration: 3, dropSpeed: 50 });
+        for (const l of rain._layers) {
+            expect(l.getConfig().fadeOutDuration).toBe(0);
+            expect(l.getConfig().dropSpeed).toBe(50);
+        }
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

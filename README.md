@@ -191,12 +191,52 @@ new DigitalRain('#container', {
 }).start();
 ```
 
+**Per-layer allowed options:**
+
+Any option not in the container-level table above can be set independently per layer:
+
+| Category | Options |
+|----------|---------|
+| Appearance | `fontSize`, `opacity`, `theme`, `glowColor`, `bgColor`, `glowAlpha`, `fontFamily`, `chars` |
+| Columns | `density`, `dualFrequency`, `dualMinGap` |
+| Speed | `dropSpeed`, `speedTiers` |
+| Trails | `trailLengthFast`, `trailLengthSlow` |
+| Bursts | `burst`, `burstDurationMin`, `burstDurationMax`, `burstIntervalMin`, `burstIntervalMax`, `burstFirstMin`, `burstFirstMax`, `burstWidth`, `burstReach`, `burstAngle` |
+| Intro | `introDepth`, `introSpeed` |
+
 **Per-layer configuration after start:**
 
 ```js
 rain.getLayer(0).configure({ opacity: 0.1 });   // dim the back layer
 rain.getLayer(2).configure({ theme: 'red' });   // red foreground layer
 rain.configure({ direction: 'up' });            // all layers at once
+```
+
+**Container-level options — handled by the parent, not per-layer:**
+
+Some options apply to the container as a whole and are automatically enforced across all layers. Per-layer overrides for these are silently ignored.
+
+| Option | Reason |
+|--------|--------|
+| `direction` | All layers must match or the depth effect breaks |
+| `hideChildren` | There's one container with one set of children |
+| `tapToBurst` | Parent wires a single click handler across all layers |
+| `startDelay` | All layers start together |
+| `fadeOutDuration` | Teardown is coordinated across all layers |
+| `on` | Events fire once from the parent, not once per layer |
+
+```js
+new DigitalRain('#container', {
+    direction:       'up',  // enforced on all layers — per-layer direction ignored
+    hideChildren:    true,  // hides children on start, restores on stop
+    fadeOutDuration: 1,     // fades all canvases together before stopping
+    tapToBurst:      true,  // single click handler fires burst on all layers
+    layers: [
+        { fontSize: 8,  direction: 'down' }, // direction override silently ignored
+        { fontSize: 14 },
+        { fontSize: 24 },
+    ],
+}).start();
 ```
 
 **Lifecycle methods delegate to all layers:**

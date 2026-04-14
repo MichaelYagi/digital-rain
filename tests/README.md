@@ -74,7 +74,7 @@ Run in jsdom — Worker and OffscreenCanvas are mocked. Fast, no browser needed.
 | `getInstance` | Null before/after, returns instance, accepts selector |
 | `help()` | Does not throw |
 | Constructor | Throws for missing element, accepts element/selector, merges options |
-| Layers | `_layers` null by default, child instances created per config, z-index stacking, `getLayer()`, `configure()` propagation, `destroy()` cleanup |
+| Layers | `_layers` null by default, child instances created per config, z-index stacking, `getLayer()`, `configure()` propagation, `destroy()` cleanup, direction enforced from parent, container-level options stripped from layers |
 | Lifecycle | Full state machine: start/stop/pause/resume/destroy |
 | Worker communication | Correct messages posted for every method |
 | `getConfig()` | Clone, excludes callbacks, reflects changes |
@@ -103,7 +103,7 @@ Run in Chromium and Firefox via Playwright with a real Worker + OffscreenCanvas.
 | `hideChildren` | Hides on start, restores on stop |
 | `tapToBurst` | Real click fires burstStart |
 | `randomize()` | Restarts cleanly, keeps running, overrides respected |
-| Layers | 3 canvases created, all workers running, stop removes all canvases, `getLayer()` returns correct instance, `configure()` propagates to all, per-layer targeted configure, `destroy()` removes wrappers |
+| Layers | 3 canvases created, all workers running, stop removes all canvases, `getLayer()` returns correct instance, `configure()` propagates to all, per-layer targeted configure, `destroy()` removes wrappers, direction enforced across all layers, `hideChildren` managed by parent |
 | Multiple instances | Two instances run independently, stopping one doesn't affect other |
 | Stress | 5× start/stop cycles without error |
 
@@ -115,4 +115,6 @@ Run in Chromium and Firefox via Playwright with a real Worker + OffscreenCanvas.
 
 **Integration tests** — add `test()` blocks to `browser/digital-rain.spec.js`. Use `boot(page, opts)` for tests that need a running instance, `load(page)` for tests that set up their own. Keep timeouts generous — worker startup takes ~100ms.
 
-When a new option is added to `DEFAULTS`, add it to the DEFAULTS unit test. When a new worker message type is added, add it to the structural integrity check and add an integration test verifying it reaches the worker.
+The layers section of the project README lists which options are valid per-layer (appearance, speed, trails, bursts, intro, density) and which are container-level only (direction, hideChildren, tapToBurst, startDelay, fadeOutDuration, on).
+
+When a new option is added to `DEFAULTS`, add it to the DEFAULTS unit test and determine whether it belongs in the per-layer or container-level category, then update the README accordingly. When a new worker message type is added, add it to the structural integrity check and add an integration test verifying it reaches the worker.

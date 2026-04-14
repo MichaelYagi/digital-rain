@@ -609,9 +609,37 @@ class DigitalRain {
         // If layers option is an array, create child instances — one per layer.
         // Each child gets a wrapper div positioned to fill the container,
         // stacked via z-index (back=1, mid=2, front=3).
-        // All public methods on this instance delegate to the children.
+        //
+        // Container-level options are handled by the parent and stripped from
+        // each layer's config so they can't be overridden per-layer:
+        //   direction      — all layers must match or depth effect breaks
+        //   hideChildren   — one container, one set of children
+        //   tapToBurst     — parent wires tap to triggerBurst on all layers
+        //   startDelay     — parent coordinates startup timing
+        //   fadeOutDuration — parent coordinates teardown
+        //   on             — events fire from parent, not per-layer
         this._layers = null;
         if (Array.isArray(this._cfg.layers) && this._cfg.layers.length > 0) {
+            // Handle hideChildren at the container level
+            if (this._cfg.hideChildren) {
+                this._el.style.backgroundColor = this._cfg.bgColor;
+                for (const child of this._el.children) {
+                    child.dataset._drainVis = child.style.visibility || '';
+                    child.style.visibility = 'hidden';
+                }
+                this._childrenHidden = true;
+            }
+
+            // Ensure container is positioned
+            if (window.getComputedStyle(this._el).position === 'static') {
+                this._el.style.position = 'relative';
+            }
+
+            // Build base config — strip container-level options
+            const CONTAINER_KEYS = ['layers','hideChildren','on','tapToBurst','startDelay','fadeOutDuration'];
+            const base = Object.assign({}, this._cfg);
+            CONTAINER_KEYS.forEach(k => delete base[k]);
+
             this._layers = this._cfg.layers.map((layerCfg, i) => {
                 const wrapper = document.createElement('div');
                 Object.assign(wrapper.style, {
@@ -621,18 +649,12 @@ class DigitalRain {
                     willChange: 'transform',
                 });
                 this._el.appendChild(wrapper);
-                // Merge base options (minus layers) with per-layer overrides
-                const base = Object.assign({}, this._cfg);
-                delete base.layers;
-                delete base.hideChildren;
-                delete base.on;
-                const merged = Object.assign({}, base, layerCfg);
+                // Per-layer config merges base, but direction is always enforced from parent
+                const merged = Object.assign({}, base, layerCfg, {
+                    direction: this._cfg.direction,
+                });
                 return new DigitalRain(wrapper, merged);
             });
-            // Ensure container is positioned so absolute children work
-            if (window.getComputedStyle(this._el).position === 'static') {
-                this._el.style.position = 'relative';
-            }
         }
 
         DigitalRain._registry.set(this._el, this);
@@ -642,7 +664,39 @@ class DigitalRain {
 
     /** Mount canvas and start. Respects startDelay. No-op if already running. */
     start() {
-        if (this._layers) { this._layers.forEach(l => l.start()); this._running = true; return; }
+        if (this._layers) {
+            if (this._running) return;
+            this._running = true;
+            const ms = (this._cfg.startDelay || 0) * 1000;
+            const doStart = () => {
+                this._layers.forEach(l => l.start());
+                // Wire tapToBurst at the container level — front layer (last) receives clicks
+                if (this._cfg.tapToBurst) {
+                    const topLayer = this._layers[this._layers.length - 1];
+                    if (topLayer && topLayer._canvas) {
+                        topLayer._canvas.style.pointerEvents = 'auto';
+                    }
+                    this._boundTap = (e) => {
+                        if (!this._cfg.burst) return;
+                        const rect    = this._el.getBoundingClientRect();
+                        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                        const col = Math.floor((clientX - rect.left) / this._cfg.fontSize);
+                        const row = Math.floor((clientY - rect.top)  / this._cfg.fontSize);
+                        this._layers.forEach(l => l._post('triggerBurst', { col, epicenterRow: Math.max(0, row) }));
+                    };
+                    this._el.addEventListener('click',      this._boundTap);
+                    this._el.addEventListener('touchstart', this._boundTap, { passive: true });
+                }
+                // Wire resize to all layers
+                this._onResize = () => this._layers.forEach(l => l._handleResize());
+                window.addEventListener('resize', this._onResize, { passive: true });
+                this._emit('start');
+            };
+            if (ms > 0) this._startTimer = setTimeout(doStart, ms);
+            else        doStart();
+            return;
+        }
         if (this._running) return;
         this._running = true;
         const ms = (this._cfg.startDelay || 0) * 1000;
@@ -652,7 +706,48 @@ class DigitalRain {
 
     /** Stop, remove canvas, restore hidden children. Respects fadeOutDuration. */
     stop() {
-        if (this._layers) { this._layers.forEach(l => l.stop()); this._running = false; return; }
+        if (this._layers) {
+            if (!this._running) return;
+            this._running = false;
+            clearTimeout(this._startTimer);
+            if (this._boundTap) {
+                this._el.removeEventListener('click',      this._boundTap);
+                this._el.removeEventListener('touchstart', this._boundTap);
+                this._boundTap = null;
+            }
+            window.removeEventListener('resize', this._onResize);
+            const fadeSecs = this._cfg.fadeOutDuration || 0;
+            const doStop = () => {
+                this._layers.forEach(l => l.stop());
+                if (this._childrenHidden) {
+                    this._el.style.backgroundColor = '';
+                    for (const child of this._el.children) {
+                        if (child.dataset._drainVis !== undefined) {
+                            child.style.visibility = child.dataset._drainVis || '';
+                            delete child.dataset._drainVis;
+                        }
+                    }
+                    this._childrenHidden = false;
+                }
+                this._paused = false;
+                this._emit('stop');
+            };
+            if (fadeSecs > 0) {
+                let frame = 0;
+                const totalFrames = Math.round(fadeSecs * 60);
+                const tick = () => {
+                    frame++;
+                    const opacity = Math.max(0, 1 - frame / totalFrames);
+                    this._layers.forEach(l => { if (l._canvas) l._canvas.style.opacity = opacity; });
+                    if (frame < totalFrames) this._fadeOutRaf = requestAnimationFrame(tick);
+                    else doStop();
+                };
+                this._fadeOutRaf = requestAnimationFrame(tick);
+            } else {
+                doStop();
+            }
+            return;
+        }
         if (!this._running) return;
         this._running = false;
         clearTimeout(this._startTimer);
@@ -759,7 +854,17 @@ class DigitalRain {
      * @param {object} options - Partial options.
      */
     configure(o) {
-        if (this._layers) { this._layers.forEach(l => l.configure(o)); return; }
+        if (this._layers) {
+            Object.assign(this._cfg, o);
+            // Build the per-layer update — enforce container-level options
+            const layerUpdate = Object.assign({}, o);
+            // direction always synced from parent
+            if (o.direction !== undefined) layerUpdate.direction = o.direction;
+            // strip container-level keys that layers don't manage
+            ['hideChildren','tapToBurst','startDelay','fadeOutDuration','on','layers'].forEach(k => delete layerUpdate[k]);
+            this._layers.forEach(l => l.configure(layerUpdate));
+            return;
+        }
         Object.assign(this._cfg, o);
         if (o.opacity !== undefined && this._canvas) {
             this._canvas.style.opacity = this._cfg.opacity;
